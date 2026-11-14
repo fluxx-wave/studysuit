@@ -313,8 +313,27 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
                 var firstUser = nonWelcome.FirstOrDefault(m => m.IsUser);
                 if (firstUser is not null && !string.IsNullOrWhiteSpace(firstUser.Content))
                 {
-                    string clean = firstUser.Content.Trim().Replace('\r', ' ').Replace('\n', ' ');
-                    CurrentSession.Title = clean.Length > 48 ? $"{clean[..45]}…" : clean;
+                    string content = firstUser.Content.Trim();
+                    if (content.StartsWith("[Circled", StringComparison.OrdinalIgnoreCase))
+                    {
+                        int qStart = content.IndexOf('\"');
+                        int qEnd = qStart >= 0 ? content.IndexOf('\"', qStart + 1) : -1;
+                        if (qStart >= 0 && qEnd > qStart)
+                        {
+                            string snippet = content.Substring(qStart + 1, qEnd - qStart - 1).Trim();
+                            snippet = snippet.Replace('\r', ' ').Replace('\n', ' ');
+                            CurrentSession.Title = $"🔍 {(snippet.Length > 36 ? snippet[..33] + "…" : snippet)}";
+                        }
+                        else
+                        {
+                            CurrentSession.Title = "🔍 Circled Search";
+                        }
+                    }
+                    else
+                    {
+                        string clean = content.Replace('\r', ' ').Replace('\n', ' ');
+                        CurrentSession.Title = clean.Length > 48 ? $"{clean[..45]}…" : clean;
+                    }
                 }
             }
 
@@ -433,6 +452,33 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
 
     [RelayCommand]
     public void OpenSettings() => OpenSettingsRequested?.Invoke();
+
+    public async Task StartCircleToSearchSessionAsync(string sessionTitle, string prompt)
+    {
+        if (string.IsNullOrWhiteSpace(prompt) || IsBusy)
+        {
+            return;
+        }
+
+        if (Messages.Any(m => !m.IsWelcome && !m.IsError))
+        {
+            await SaveCurrentSessionToHistoryAsync().ConfigureAwait(false);
+        }
+
+        CurrentSession = new AiChatSession
+        {
+            Title = sessionTitle
+        };
+
+        RunOnUi(() =>
+        {
+            Messages.Clear();
+            AddWelcomeMessage();
+            StatusText = $"Circle to Search: {sessionTitle}";
+        });
+
+        await SendQuickPromptAsync(prompt);
+    }
 
     [RelayCommand]
     public async Task SendQuickPromptAsync(string? prompt)

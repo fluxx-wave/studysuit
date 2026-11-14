@@ -663,7 +663,7 @@ public sealed class PdfReaderTests : IDisposable
         var webService = new StubWebResearchService(parsed);
         int pdfSearchCalls = 0;
 
-        using var aiVm = new AiAssistantViewModel(settingsService, chatService, webService)
+        using var aiVm = new AiAssistantViewModel(settingsService, chatService, webService, chatHistoryService: new AiChatHistoryService(Path.Combine(_tempDir, "hist1")))
         {
             UsePdfContext = true,
             UseWebResearch = true,
@@ -721,7 +721,7 @@ public sealed class PdfReaderTests : IDisposable
         ]);
         int pdfSearchCalls = 0;
 
-        using var aiVm = new AiAssistantViewModel(settingsService, chatService, webService)
+        using var aiVm = new AiAssistantViewModel(settingsService, chatService, webService, chatHistoryService: new AiChatHistoryService(Path.Combine(_tempDir, "hist1")))
         {
             UsePdfContext = true,
             UseWebResearch = true,
@@ -1082,7 +1082,7 @@ public sealed class PdfReaderTests : IDisposable
         var chatService = new AiChatService(new HttpClient(new StubHttpMessageHandler(_ => JsonResp("{}"))));
         var webService = new StubWebResearchService([]);
 
-        using var aiVm = new AiAssistantViewModel(settingsService, chatService, webService);
+        using var aiVm = new AiAssistantViewModel(settingsService, chatService, webService, chatHistoryService: new AiChatHistoryService(Path.Combine(_tempDir, "hist1")));
         Assert.Equal(AiPersonaPresetKind.General, aiVm.SelectedPersonaPreset);
         Assert.Equal(AiAnswerLength.Balanced, aiVm.SelectedAnswerLength);
 
@@ -1148,7 +1148,11 @@ public sealed class PdfReaderTests : IDisposable
             return JsonResp("""{"choices":[{"message":{"content":"Ministral reply works!"}}]}""");
         });
 
-        using var aiVm = new AiAssistantViewModel(settingsService, new AiChatService(new HttpClient(handler)), new StubWebResearchService([]))
+        using var aiVm = new AiAssistantViewModel(
+            settingsService,
+            new AiChatService(new HttpClient(handler)),
+            new StubWebResearchService([]),
+            chatHistoryService: new AiChatHistoryService(Path.Combine(_tempDir, "hist_mini")))
         {
             UsePdfContext = false,
             UseWebResearch = true
@@ -1211,7 +1215,8 @@ public sealed class PdfReaderTests : IDisposable
             settingsService,
             new AiChatService(new HttpClient(new StubHttpMessageHandler(_ => JsonResp("{}")))),
             new StubWebResearchService([]),
-            stubVoice);
+            stubVoice,
+            chatHistoryService: new AiChatHistoryService(Path.Combine(_tempDir, "hist_voice")));
 
         Assert.Equal(VoiceReadoutMode.HindiDirect, aiVm.SelectedVoiceMode);
         aiVm.SelectedVoiceMode = VoiceReadoutMode.HindiTranslate;
@@ -1573,7 +1578,7 @@ public sealed class PdfReaderTests : IDisposable
         var chatService = new AiChatService(new HttpClient(stubHandler));
         var webService = new StubWebResearchService([]);
 
-        using var aiVm = new AiAssistantViewModel(settingsService, chatService, webService)
+        using var aiVm = new AiAssistantViewModel(settingsService, chatService, webService, chatHistoryService: new AiChatHistoryService(Path.Combine(_tempDir, "hist1")))
         {
             UsePdfContext = false,
             UseWebResearch = false
@@ -1758,7 +1763,12 @@ public sealed class PdfReaderTests : IDisposable
         var chatService = new AiChatService(new HttpClient(new StubHttpMessageHandler(_ => JsonResp("{}"))));
         var webService = new StubWebResearchService([]);
 
-        using var aiVm = new AiAssistantViewModel(settingsService, chatService, webService, stubVoiceService);
+        using var aiVm = new AiAssistantViewModel(
+            settingsService,
+            chatService,
+            webService,
+            stubVoiceService,
+            chatHistoryService: new AiChatHistoryService(Path.Combine(_tempDir, "hist_vmvoice")));
         aiVm.Settings.VoiceSpeed = 1.3;
         aiVm.Settings.VoicePitch = 2;
         aiVm.Settings.VoiceModel = "Microsoft Zira";
@@ -2260,6 +2270,146 @@ public sealed class PdfReaderTests : IDisposable
         Assert.Contains("CircleAction_WebSearch_Click", xaml);
         Assert.Contains("CircleAction_Practice_Click", xaml);
         Assert.Contains("x:Name=\"CircleToSearchCustomPromptBox\"", xaml);
+    }
+
+    [Fact]
+    public void MathEquationRenderer_RendersScientificAndChemicalEquationsCorrectly()
+    {
+        // 1. User's exact chemical decomposition reaction
+        string chemicalDecomposition = @"\text{FeSO}_4(s) \xrightarrow{\Delta} \text{Fe}_2\text{O}_3(s) + \text{SO}_2(g) + \text{SO}_3(g)";
+        var bmp1 = MathEquationRenderer.RenderEquation(chemicalDecomposition);
+        Assert.True(bmp1.IsFrozen);
+        Assert.True(bmp1.PixelWidth > 120);
+        Assert.True(bmp1.PixelHeight > 40);
+
+        // 2. Reaction with condition below arrow
+        string arrowWithConditions = @"\text{N}_2(g) + 3\text{H}_2(g) \xrightarrow[\text{450}^\circ\text{C}]{\text{Fe catalyst}} 2\text{NH}_3(g)";
+        var bmp2 = MathEquationRenderer.RenderEquation(arrowWithConditions);
+        Assert.True(bmp2.IsFrozen);
+        Assert.True(bmp2.PixelWidth > 150);
+
+        // 3. Equilibrium reaction
+        string equilibrium = @"\text{N}_2\text{O}_4(g) \rightleftharpoons 2\text{NO}_2(g)";
+        var bmp3 = MathEquationRenderer.RenderEquation(equilibrium);
+        Assert.True(bmp3.IsFrozen);
+        Assert.True(bmp3.PixelWidth > 80);
+
+        // 4. \ce{...} syntax preprocessing
+        string ceSyntax = @"\ce{2FeSO4 ->[\Delta] Fe2O3 + SO2 + SO3}";
+        var bmp4 = MathEquationRenderer.RenderEquation(ceSyntax);
+        Assert.True(bmp4.IsFrozen);
+        Assert.True(bmp4.PixelWidth > 100);
+
+        // 5. Physics vectors and accents
+        string physicsVector = @"\vec{F} = m\vec{a} = m\frac{d\vec{v}}{dt}";
+        var bmp5 = MathEquationRenderer.RenderEquation(physicsVector);
+        Assert.True(bmp5.IsFrozen);
+        Assert.True(bmp5.PixelWidth > 80);
+
+        // 6. Physics unit vectors
+        string unitVectors = @"\vec{r} = x\hat{i} + y\hat{j} + z\hat{k}";
+        var bmp6 = MathEquationRenderer.RenderEquation(unitVectors);
+        Assert.True(bmp6.IsFrozen);
+
+        // 7. Binomial coefficient and root with degree
+        string mathAdvanced = @"\binom{n}{k} = \frac{n!}{k!(n-k)!}, \quad \sqrt[3]{x^3 + y^3}";
+        var bmp7 = MathEquationRenderer.RenderEquation(mathAdvanced);
+        Assert.True(bmp7.IsFrozen);
+        Assert.True(bmp7.PixelHeight > 40);
+
+        // 8. Multi-line equations with \\
+        string multiLine = @"2\text{H}_2 + \text{O}_2 \rightarrow 2\text{H}_2\text{O} \\ \text{C} + \text{O}_2 \rightarrow \text{CO}_2";
+        var bmp8 = MathEquationRenderer.RenderEquation(multiLine);
+        Assert.True(bmp8.IsFrozen);
+        Assert.True(bmp8.PixelHeight > 60); // Multiple stacked lines have increased height
+    }
+
+    [Fact]
+    public async Task InspectPage16Words()
+    {
+        string path = @"C:\Users\SURYA\AppData\Local\StudySuit.PdfReader\library\ncert\jesc1\jesc101.pdf";
+        if (!File.Exists(path)) return;
+
+        var pdfService = new PdfService();
+        var words = await pdfService.GetPageWordsAsync(path, 16);
+
+        var sb = new StringBuilder();
+        foreach (var w in words.Where(w => w.Text.Contains("decomposition", StringComparison.OrdinalIgnoreCase) ||
+                                           w.Text.Contains("equation", StringComparison.OrdinalIgnoreCase) ||
+                                           w.Text.Contains("energy", StringComparison.OrdinalIgnoreCase) ||
+                                           w.Text.Contains("electricity", StringComparison.OrdinalIgnoreCase) ||
+                                           w.Text.Contains("12", StringComparison.OrdinalIgnoreCase)))
+        {
+            sb.AppendLine($"Word: '{w.Text}' -> X={w.Bounds.X:F4}, Y={w.Bounds.Y:F4}, W={w.Bounds.Width:F4}, H={w.Bounds.Height:F4}");
+        }
+        File.WriteAllText(@"C:\Users\SURYA\.gemini\antigravity\brain\d218edce-7961-4978-918b-55ddf267c5d1\page16_words.txt", sb.ToString());
+    }
+
+    [Fact]
+    public void CircleToSearch_StrictlyConsidersAreaUnderCircle_AndSortsReadingOrder()
+    {
+        // 1. Ray-casting point-in-polygon unit test
+        var polygon = new List<NormalizedPoint>
+        {
+            new(0.2, 0.2),
+            new(0.8, 0.2),
+            new(0.8, 0.6),
+            new(0.2, 0.6)
+        };
+
+        Assert.True(DocumentTabViewModel.IsPointInPolygon(new NormalizedPoint(0.5, 0.4), polygon));
+        Assert.True(DocumentTabViewModel.IsPointInPolygon(new NormalizedPoint(0.3, 0.3), polygon));
+        Assert.False(DocumentTabViewModel.IsPointInPolygon(new NormalizedPoint(0.1, 0.1), polygon));
+        Assert.False(DocumentTabViewModel.IsPointInPolygon(new NormalizedPoint(0.5, 0.7), polygon)); // Below polygon (e.g. next question)
+
+        // 2. Reading order test: 2-line question with words presented out of order
+        // Line 1: "What" (x=0.1, y=0.2), "is" (x=0.2, y=0.2), "matter?" (x=0.3, y=0.2)
+        // Line 2: "Explain" (x=0.1, y=0.25), "in" (x=0.25, y=0.25), "detail." (x=0.35, y=0.25)
+        var words = new List<PdfWordBox>
+        {
+            new("Explain", new NormalizedRect(0.1, 0.25, 0.1, 0.03)),
+            new("is", new NormalizedRect(0.2, 0.20, 0.05, 0.03)),
+            new("What", new NormalizedRect(0.1, 0.20, 0.08, 0.03)),
+            new("detail.", new NormalizedRect(0.35, 0.25, 0.1, 0.03)),
+            new("matter?", new NormalizedRect(0.3, 0.20, 0.1, 0.03)),
+            new("in", new NormalizedRect(0.25, 0.25, 0.05, 0.03)),
+        };
+
+        var sorted = DocumentTabViewModel.SortWordsInReadingOrder(words);
+        string extracted = string.Join(' ', sorted.Select(w => w.Text));
+        Assert.Equal("What is matter? Explain in detail.", extracted);
+    }
+
+    [Fact]
+    public async Task AiAssistant_CircleToSearchCreatesAndPersistsDedicatedSession()
+    {
+        var settingsPath = Path.Combine(_tempDir, "circle_settings.json");
+        var settingsService = new AiSettingsService(settingsPath);
+        var stubHandler = new StubHttpMessageHandler(_ =>
+        {
+            return JsonResp("""{"message":{"role":"assistant","content":"Ferrous sulphate undergoes thermal decomposition."}}""");
+        });
+        var chatService = new AiChatService(new HttpClient(stubHandler));
+        var webService = new StubWebResearchService([]);
+        var histDir = Path.Combine(_tempDir, "circle_hist");
+        var historyService = new AiChatHistoryService(histDir);
+
+        using var aiVm = new AiAssistantViewModel(settingsService, chatService, webService, chatHistoryService: historyService);
+
+        string sessionTitle = "🔍 FeSO4 thermal decomposition (p.6)";
+        string prompt = "[Circled on Page 6 of 'Chemistry']: \"FeSO4 heating\"\n\nExplain this decomposition reaction.";
+
+        await aiVm.StartCircleToSearchSessionAsync(sessionTitle, prompt);
+
+        // Verify session was updated and persisted
+        Assert.Equal(sessionTitle, aiVm.CurrentSession?.Title);
+        Assert.Equal(2, aiVm.Messages.Count(m => !m.IsWelcome));
+
+        // Verify it was persisted to history
+        var sessions = await historyService.LoadSessionsAsync();
+        Assert.Single(sessions);
+        Assert.Equal(sessionTitle, sessions[0].Title);
+        Assert.Equal(2, sessions[0].MessageCount);
     }
 
     private string CreateSamplePdf(string fileName)

@@ -1667,17 +1667,21 @@ public partial class MainWindow : FluentWindow
         {
             if (_inkCapturePoints.Count >= 3)
             {
-                double minX = _inkCapturePoints.Min(p => p.X);
-                double maxX = _inkCapturePoints.Max(p => p.X);
-                double minY = _inkCapturePoints.Min(p => p.Y);
-                double maxY = _inkCapturePoints.Max(p => p.Y);
+                var normPoints = _inkCapturePoints
+                    .Select(p => new NormalizedPoint(Math.Clamp(p.X / surfaceW, 0, 1), Math.Clamp(p.Y / surfaceH, 0, 1)))
+                    .ToList();
+
+                double minX = normPoints.Min(p => p.X);
+                double maxX = normPoints.Max(p => p.X);
+                double minY = normPoints.Min(p => p.Y);
+                double maxY = normPoints.Max(p => p.Y);
                 double w = maxX - minX;
                 double h = maxY - minY;
 
-                if (w >= 10 && h >= 10)
+                if (w >= 0.005 && h >= 0.005)
                 {
-                    var normRect = new NormalizedRect(minX / surfaceW, minY / surfaceH, w / surfaceW, h / surfaceH);
-                    await HandleCircleToSearchSelectionAsync(pageVm, normRect);
+                    var normRect = new NormalizedRect(minX, minY, w, h);
+                    await HandleCircleToSearchSelectionAsync(pageVm, normPoints, normRect);
                 }
             }
 
@@ -1831,16 +1835,28 @@ public partial class MainWindow : FluentWindow
     private string _circleSelectionText = string.Empty;
     private int _circleSelectionPageNumber;
 
-    private async Task HandleCircleToSearchSelectionAsync(PdfPageViewModel pageVm, NormalizedRect normRect)
+    private async Task HandleCircleToSearchSelectionAsync(
+        PdfPageViewModel pageVm,
+        IReadOnlyList<NormalizedPoint> normPolygon,
+        NormalizedRect normRect)
     {
         if (_wiredTab is null) return;
 
         _circleSelectionPageNumber = pageVm.PageNumber;
-        _circleSelectionText = await _wiredTab.ExtractTextInSelectionAsync(pageVm.PageNumber, normRect);
+        var (extractedText, matchedRects) = await _wiredTab.ExtractTextInPolygonWithRectsAsync(pageVm.PageNumber, normPolygon);
+        _circleSelectionText = extractedText;
 
-        // Highlight selection with a friendly cyan glow
-        var rects = new List<NormalizedRect> { normRect };
-        pageVm.UpdateLiveWordSelection(rects, _wiredTab.RotationDegrees, new SolidColorBrush(Color.FromArgb(0x40, 0x38, 0xBD, 0xF8)));
+        // Highlight selection with a friendly cyan glow:
+        // If specific words were detected inside the circle, highlight the exact word boxes!
+        // If it's a visual diagram or region without text, highlight the bounding rect.
+        var highlightRects = matchedRects.Count > 0
+            ? matchedRects.Select(r => r.Rotate(_wiredTab.RotationDegrees)).ToList()
+            : [normRect];
+
+        pageVm.UpdateLiveWordSelection(
+            highlightRects,
+            _wiredTab.RotationDegrees,
+            new SolidColorBrush(Color.FromArgb(0x40, 0x38, 0xBD, 0xF8)));
 
         CircleToSearchPageBadge.Text = $" • Page {pageVm.PageNumber}";
         if (!string.IsNullOrWhiteSpace(_circleSelectionText))
@@ -1927,20 +1943,26 @@ public partial class MainWindow : FluentWindow
     private async Task ExecuteCircleAiQueryAsync(string userInstruction)
     {
         CircleToSearchCard.Visibility = Visibility.Collapsed;
-        _viewModel.IsSidebarOpen = true;
+        _viewModel.IsAiSidebarOpen = true;
 
         string docTitle = _wiredTab?.DocumentInfo.Title ?? _wiredTab?.DocumentInfo.FileName ?? "Document";
         string fullPrompt;
+        string sessionTitle;
+
         if (!string.IsNullOrWhiteSpace(_circleSelectionText))
         {
+            string shortSnippet = _circleSelectionText.Trim().Replace('\r', ' ').Replace('\n', ' ');
+            if (shortSnippet.Length > 36) shortSnippet = shortSnippet[..33] + "…";
+            sessionTitle = $"🔍 {shortSnippet} (p.{_circleSelectionPageNumber})";
             fullPrompt = $"[Circled on Page {_circleSelectionPageNumber} of '{docTitle}']:\n\"{_circleSelectionText}\"\n\n{userInstruction}";
         }
         else
         {
+            sessionTitle = $"🔍 Page {_circleSelectionPageNumber} Diagram";
             fullPrompt = $"[Circled diagram/region on Page {_circleSelectionPageNumber} of '{docTitle}']:\n{userInstruction}";
         }
 
-        await _viewModel.AiAssistant.SendQuickPromptAsync(fullPrompt);
+        await _viewModel.AiAssistant.StartCircleToSearchSessionAsync(sessionTitle, fullPrompt);
     }
 
     private void PrintButton_Click(object sender, RoutedEventArgs e)

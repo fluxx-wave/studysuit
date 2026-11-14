@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("StudySuit.PdfReader")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+dc88a220253e1fce8b47aae5be04b5569886934b")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+2d9fc4e4ca069b73e45c1cb5b93d08673e04d3a9")]
 [assembly: System.Reflection.AssemblyProductAttribute("StudySuit.PdfReader")]
 [assembly: System.Reflection.AssemblyTitleAttribute("StudySuit.PdfReader")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

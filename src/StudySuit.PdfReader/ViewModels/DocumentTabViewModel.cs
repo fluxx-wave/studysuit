@@ -499,10 +499,130 @@ public sealed partial class DocumentTabViewModel : ObservableObject, IDisposable
 
         var selected = words
             .Where(w => w.Bounds.Intersects(unrotatedRect))
-            .Select(w => w.Text)
             .ToList();
 
-        return string.Join(' ', selected);
+        var sorted = SortWordsInReadingOrder(selected);
+        return string.Join(' ', sorted.Select(w => w.Text));
+    }
+
+    public async Task<(string Text, List<NormalizedRect> WordRects)> ExtractTextInPolygonWithRectsAsync(
+        int pageNumber,
+        IReadOnlyList<NormalizedPoint> displayPolygon)
+    {
+        if (displayPolygon.Count < 3)
+        {
+            return (string.Empty, []);
+        }
+
+        var unrotatedPoly = displayPolygon
+            .Select(p => p.Unrotate(RotationDegrees))
+            .ToList();
+
+        var words = await _pdfService.GetPageWordsAsync(FilePath, pageNumber, _password, _lifetimeCts.Token);
+        if (words.Count == 0)
+        {
+            return (string.Empty, []);
+        }
+
+        double minX = unrotatedPoly.Min(p => p.X);
+        double maxX = unrotatedPoly.Max(p => p.X);
+        double minY = unrotatedPoly.Min(p => p.Y);
+        double maxY = unrotatedPoly.Max(p => p.Y);
+
+        var selectedWords = new List<PdfWordBox>();
+        foreach (var word in words)
+        {
+            var b = word.Bounds;
+            // Quick bounding box rejection
+            if (b.X + b.Width < minX || b.X > maxX || b.Y + b.Height < minY || b.Y > maxY)
+            {
+                continue;
+            }
+
+            // Test whether word is inside the polygon strictly:
+            // Check center point and left/right quarter points
+            var center = new NormalizedPoint(b.X + b.Width * 0.5, b.Y + b.Height * 0.5);
+            var leftQuarter = new NormalizedPoint(b.X + b.Width * 0.2, b.Y + b.Height * 0.5);
+            var rightQuarter = new NormalizedPoint(b.X + b.Width * 0.8, b.Y + b.Height * 0.5);
+
+            bool isInside = IsPointInPolygon(center, unrotatedPoly) ||
+                            (IsPointInPolygon(leftQuarter, unrotatedPoly) && IsPointInPolygon(rightQuarter, unrotatedPoly));
+
+            if (isInside)
+            {
+                selectedWords.Add(word);
+            }
+        }
+
+        if (selectedWords.Count == 0)
+        {
+            return (string.Empty, []);
+        }
+
+        var sortedWords = SortWordsInReadingOrder(selectedWords);
+        string text = string.Join(' ', sortedWords.Select(w => w.Text));
+        var rects = sortedWords.Select(w => w.Bounds).ToList();
+        return (text, rects);
+    }
+
+    public static bool IsPointInPolygon(NormalizedPoint pt, IReadOnlyList<NormalizedPoint> polygon)
+    {
+        if (polygon.Count < 3) return false;
+
+        bool inside = false;
+        int j = polygon.Count - 1;
+        for (int i = 0; i < polygon.Count; i++)
+        {
+            double xi = polygon[i].X, yi = polygon[i].Y;
+            double xj = polygon[j].X, yj = polygon[j].Y;
+
+            if (((yi > pt.Y) != (yj > pt.Y)) &&
+                (pt.X < (xj - xi) * (pt.Y - yi) / (yj - yi) + xi))
+            {
+                inside = !inside;
+            }
+            j = i;
+        }
+
+        return inside;
+    }
+
+    public static List<PdfWordBox> SortWordsInReadingOrder(List<PdfWordBox> words)
+    {
+        if (words.Count <= 1) return words;
+
+        double avgHeight = words.Average(w => w.Bounds.Height);
+        double lineThreshold = Math.Max(0.005, avgHeight * 0.55);
+
+        var byY = words.OrderBy(w => w.Bounds.Y).ToList();
+
+        var lines = new List<List<PdfWordBox>>();
+        List<PdfWordBox> currentLine = [byY[0]];
+        double currentLineY = byY[0].Bounds.Y;
+
+        for (int i = 1; i < byY.Count; i++)
+        {
+            var word = byY[i];
+            if (Math.Abs(word.Bounds.Y - currentLineY) <= lineThreshold)
+            {
+                currentLine.Add(word);
+            }
+            else
+            {
+                lines.Add(currentLine);
+                currentLine = [word];
+                currentLineY = word.Bounds.Y;
+            }
+        }
+        lines.Add(currentLine);
+
+        var result = new List<PdfWordBox>();
+        foreach (var line in lines)
+        {
+            result.AddRange(line.OrderBy(w => w.Bounds.X));
+        }
+
+        return result;
     }
 
     public async Task<string> GetCurrentPageTextAsync()

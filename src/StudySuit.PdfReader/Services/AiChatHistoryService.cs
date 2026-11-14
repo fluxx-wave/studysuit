@@ -55,7 +55,10 @@ public sealed class AiChatHistoryService : IAiChatHistoryService
                 if (session is not null && !string.IsNullOrWhiteSpace(session.Id))
                 {
                     session.MessageCount = session.Messages.Count(m => !m.IsWelcome && !m.IsError);
-                    list.Add(session);
+                    if (session.MessageCount > 0)
+                    {
+                        list.Add(session);
+                    }
                 }
             }
             catch
