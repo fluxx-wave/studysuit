@@ -86,3 +86,4 @@ D:\studysuit\src\StudySuit.PdfReader\bin\Release\net8.0-windows\Microsoft.Web.We
 D:\studysuit\src\StudySuit.PdfReader\bin\Release\net8.0-windows\Microsoft.Web.WebView2.WinForms.xml
 D:\studysuit\src\StudySuit.PdfReader\bin\Release\net8.0-windows\Microsoft.Web.WebView2.Wpf.xml
 D:\studysuit\src\StudySuit.PdfReader\obj\Release\net8.0-windows\StudySuit.PdfReader_Content.g.cs
+D:\studysuit\src\StudySuit.PdfReader\obj\Release\net8.0-windows\StudySuit.PdfReader.sourcelink.json

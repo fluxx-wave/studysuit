@@ -9,10 +9,10 @@
                  xmlns:controls="clr-namespace:StudySuit.PdfReader.Controls"
                  mc:Ignorable="d"
                  Title="StudySuit PDF Reader"
-                 Width="1440"
-                 Height="920"
+                 Width="1180"
+                 Height="720"
                  MinWidth="540"
-                 MinHeight="480"
+                 MinHeight="460"
                  WindowStartupLocation="CenterScreen"
                  ExtendsContentIntoTitleBar="True"
                  WindowBackdropType="Mica"
@@ -258,6 +258,50 @@
                                             <Trigger Property="IsChecked" Value="True">
                                                 <Setter TargetName="FeedTabBorder" Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}" />
                                                 <Setter TargetName="FeedTabBorder" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ToggleButton.Style>
+                </ToggleButton>
+
+                <!-- NCERT Books Library Tab Button -->
+                <ToggleButton DockPanel.Dock="Left"
+                              IsChecked="{Binding IsLibraryActive, Mode=OneWay}"
+                              Command="{Binding ShowLibraryCommand}"
+                              Margin="0,0,8,0"
+                              Padding="12,5"
+                              BorderThickness="1"
+                              Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                              Cursor="Hand"
+                              ToolTip="NCERT Textbooks Library (Class 6–12 • Direct Download &amp; Read)">
+                    <ToggleButton.Style>
+                        <Style TargetType="ToggleButton">
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="BorderBrush" Value="Transparent" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="LibraryTabBorder"
+                                                CornerRadius="6"
+                                                Padding="{TemplateBinding Padding}"
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}">
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <ui:SymbolIcon Symbol="Library24" FontSize="15" Margin="0,0,6,0" Foreground="#FFA78BFA" />
+                                                <TextBlock Text="NCERT Library" FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="LibraryTabBorder" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                                            </Trigger>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="LibraryTabBorder" Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}" />
+                                                <Setter TargetName="LibraryTabBorder" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
                                             </Trigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
@@ -725,6 +769,16 @@
                     </StackPanel>
                 </RadioButton>
 
+                <!-- Circle to Search with AI -->
+                <RadioButton Style="{StaticResource ToolPillStyle}"
+                             IsChecked="{Binding ActiveTool, Converter={StaticResource EnumEqual}, ConverterParameter=CircleToSearch}"
+                             ToolTip="Circle to Search with AI (Draw a freehand circle or lasso around any text, formula, or diagram to ask AI)">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="BotSparkle24" FontSize="15" Foreground="#FF38BDF8" />
+                        <TextBlock Text="Circle to Search" Margin="5,0,0,0" FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    </StackPanel>
+                </RadioButton>
+
                 <Border Width="1" Height="20" Margin="6,0" Background="{DynamicResource ControlStrokeColorDefaultBrush}" />
 
                 <!-- Word-Selection Text Markup Tools -->
@@ -958,6 +1012,7 @@
             <!-- 5A. DEFAULT HOME STUDY SUITE DASHBOARD -->
             <Grid x:Name="HomeDashboardRoot"
                   Visibility="{Binding ShowHomeDashboard, Converter={StaticResource BoolToVis}}"
+                  Background="{DynamicResource ApplicationBackgroundBrush}"
                   IsVisibleChanged="AnimatedSurface_IsVisibleChanged">
                 <Grid.RenderTransform>
                     <TranslateTransform />
@@ -1569,6 +1624,7 @@
             <!-- 5B. DOCUMENT READER WORKSPACE -->
             <Grid x:Name="DocumentReaderRoot"
                   Visibility="{Binding ShowDocumentReader, Converter={StaticResource BoolToVis}}"
+                  Background="{DynamicResource ApplicationBackgroundBrush}"
                   IsVisibleChanged="AnimatedSurface_IsVisibleChanged">
                 <Grid.RenderTransform>
                     <TranslateTransform />
@@ -1957,12 +2013,15 @@
                                           MouseLeftButtonDown="PageSurface_MouseLeftButtonDown"
                                           MouseMove="PageSurface_MouseMove"
                                           MouseLeftButtonUp="PageSurface_MouseLeftButtonUp"
+                                          LostMouseCapture="PageSurface_LostMouseCapture"
                                           PreviewTouchDown="PageSurface_PreviewTouchDown"
                                           PreviewTouchMove="PageSurface_PreviewTouchMove"
                                           PreviewTouchUp="PageSurface_PreviewTouchUp"
+                                          LostTouchCapture="PageSurface_LostTouchCapture"
                                           PreviewStylusDown="PageSurface_PreviewStylusDown"
                                           PreviewStylusMove="PageSurface_PreviewStylusMove"
-                                          PreviewStylusUp="PageSurface_PreviewStylusUp">
+                                          PreviewStylusUp="PageSurface_PreviewStylusUp"
+                                          LostStylusCapture="PageSurface_LostStylusCapture">
                                         <Grid.Style>
                                             <Style TargetType="Grid">
                                                 <Setter Property="Cursor" Value="Arrow" />
@@ -2249,6 +2308,145 @@
                             <TextBlock Text="Exit Fullscreen" Margin="6,0,0,0" FontSize="12" VerticalAlignment="Center" />
                         </StackPanel>
                     </ui:Button>
+
+                    <!-- Floating Circle to Search with AI Card -->
+                    <Border x:Name="CircleToSearchCard"
+                            Visibility="Collapsed"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Bottom"
+                            Margin="0,0,0,32"
+                            Padding="16,14"
+                            CornerRadius="14"
+                            BorderThickness="1.5"
+                            BorderBrush="#FF38BDF8"
+                            Background="{DynamicResource SolidBackgroundFillColorBaseBrush}"
+                            MaxWidth="660"
+                            IsVisibleChanged="AnimatedSurface_IsVisibleChanged">
+                        <Border.RenderTransform>
+                            <TranslateTransform />
+                        </Border.RenderTransform>
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="28" ShadowDepth="4" Opacity="0.45" Color="#38BDF8" />
+                        </Border.Effect>
+
+                        <StackPanel>
+                            <!-- Top Header -->
+                            <DockPanel Margin="0,0,0,10">
+                                <ui:Button DockPanel.Dock="Right"
+                                           Appearance="Transparent"
+                                           Padding="4"
+                                           ToolTip="Close Circle to Search"
+                                           Click="CloseCircleToSearch_Click">
+                                    <ui:SymbolIcon Symbol="Dismiss24" FontSize="14" />
+                                </ui:Button>
+
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Border Width="26" Height="26" CornerRadius="13" Background="#2538BDF8" Margin="0,0,8,0" VerticalAlignment="Center">
+                                        <ui:SymbolIcon Symbol="BotSparkle24" FontSize="14" Foreground="#FF38BDF8" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Border>
+                                    <TextBlock Text="Circle to Search with AI" FontWeight="Bold" FontSize="13.5" VerticalAlignment="Center" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                                    <TextBlock x:Name="CircleToSearchPageBadge" Text=" • Page 1" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </DockPanel>
+
+                            <!-- Snippet of Circled Content -->
+                            <Border Padding="10,8"
+                                    CornerRadius="8"
+                                    Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                                    Margin="0,0,0,10"
+                                    MaxHeight="70">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <TextBlock x:Name="CircleToSearchSnippetText"
+                                               Text="Selected region on page"
+                                               FontSize="12"
+                                               TextWrapping="Wrap"
+                                               FontStyle="Italic"
+                                               Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                                </ScrollViewer>
+                            </Border>
+
+                            <!-- Quick Action Buttons -->
+                            <WrapPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                <ui:Button Appearance="Primary"
+                                           Padding="10,6"
+                                           Margin="0,0,6,6"
+                                           Click="CircleAction_Explain_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="BotSparkle24" FontSize="13" Margin="0,0,5,0" />
+                                        <TextBlock Text="Explain Selection" FontSize="11.5" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                </ui:Button>
+
+                                <ui:Button Appearance="Secondary"
+                                           Padding="10,6"
+                                           Margin="0,0,6,6"
+                                           Click="CircleAction_Solve_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="HatGraduation24" FontSize="13" Margin="0,0,5,0" />
+                                        <TextBlock Text="Solve Step-by-Step" FontSize="11.5" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                </ui:Button>
+
+                                <ui:Button Appearance="Secondary"
+                                           Padding="10,6"
+                                           Margin="0,0,6,6"
+                                           Click="CircleAction_WebSearch_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="Search24" FontSize="13" Margin="0,0,5,0" />
+                                        <TextBlock Text="Web Search &amp; Grounding" FontSize="11.5" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                </ui:Button>
+
+                                <ui:Button Appearance="Secondary"
+                                           Padding="10,6"
+                                           Margin="0,0,6,6"
+                                           Click="CircleAction_Practice_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="DocumentBulletList24" FontSize="13" Margin="0,0,5,0" />
+                                        <TextBlock Text="Generate Practice Questions" FontSize="11.5" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                </ui:Button>
+
+                                <ui:Button Appearance="Transparent"
+                                           Padding="8,6"
+                                           Margin="0,0,6,6"
+                                           Click="CircleAction_Copy_Click"
+                                           ToolTip="Copy extracted text to clipboard">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="Copy24" FontSize="13" Margin="0,0,4,0" />
+                                        <TextBlock Text="Copy Text" FontSize="11.5" />
+                                    </StackPanel>
+                                </ui:Button>
+                            </WrapPanel>
+
+                            <!-- Custom Prompt Input -->
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <ui:TextBox x:Name="CircleToSearchCustomPromptBox"
+                                            Grid.Column="0"
+                                            PlaceholderText="Ask AI anything about this selection (or press Enter)..."
+                                            KeyDown="CircleToSearchCustomPromptBox_KeyDown"
+                                            ClearButtonEnabled="True"
+                                            Height="34" />
+
+                                <ui:Button Grid.Column="1"
+                                           Appearance="Primary"
+                                           Padding="14,0"
+                                           Height="34"
+                                           Margin="8,0,0,0"
+                                           Click="CircleAction_CustomAsk_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="Send24" FontSize="14" Margin="0,0,4,0" />
+                                        <TextBlock Text="Ask AI" FontWeight="SemiBold" FontSize="12" />
+                                    </StackPanel>
+                                </ui:Button>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
 
                     <!-- Document Properties Modal Card Overlay -->
                     <Grid Background="#80000000"
@@ -2677,6 +2875,7 @@
         <!-- NEWS & CURRENT AFFAIRS FEED (Daily, Weekly, Monthly) -->
             <Grid x:Name="NewsFeedRoot"
                   Visibility="{Binding ShowNewsFeed, Converter={StaticResource BoolToVis}}"
+                  Background="{DynamicResource ApplicationBackgroundBrush}"
                   IsVisibleChanged="AnimatedSurface_IsVisibleChanged">
                 <Grid.RenderTransform>
                     <TranslateTransform />
@@ -3194,6 +3393,383 @@
                     </ScrollViewer>
                 </Grid>
             </Grid>
+        </Grid>
+
+        <!-- NCERT TEXTBOOKS LIBRARY (Class 6 to 12 • 1-Click Download & Read) -->
+        <Grid x:Name="NcertLibraryRoot"
+              Visibility="{Binding ShowNcertLibrary, Converter={StaticResource BoolToVis}}"
+              Background="{DynamicResource ApplicationBackgroundBrush}"
+              IsVisibleChanged="AnimatedSurface_IsVisibleChanged">
+            <Grid.RenderTransform>
+                <TranslateTransform />
+            </Grid.RenderTransform>
+
+            <Grid DataContext="{Binding Library}">
+                <Grid.RowDefinitions>
+                <!-- Row 0: Top Header & Stats -->
+                <RowDefinition Height="Auto" />
+                <!-- Row 1: Filters Bar (Search, Class, Subject, Only Downloaded) -->
+                <RowDefinition Height="Auto" />
+                <!-- Row 2: Books Catalog Grid -->
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- Row 0: Top Header -->
+            <Border Grid.Row="0"
+                    Padding="28,18,28,14"
+                    BorderThickness="0,0,0,1"
+                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                    Background="{DynamicResource LayerFillColorDefaultBrush}">
+                <DockPanel>
+                    <!-- Right: Summary badge & Open Folder button -->
+                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
+                        <Border Padding="12,6"
+                                CornerRadius="8"
+                                Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                                Margin="0,0,10,0">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <ui:SymbolIcon Symbol="CheckmarkCircle24" FontSize="14" Foreground="#FF4ADE80" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding SummaryText}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+
+                        <ui:Button Appearance="Secondary"
+                                   Padding="12,6"
+                                   Command="{Binding OpenLibraryFolderCommand}"
+                                   ToolTip="Open local NCERT storage folder in Windows Explorer">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <ui:SymbolIcon Symbol="FolderOpen24" FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                <TextBlock Text="Open Folder" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </ui:Button>
+                    </StackPanel>
+
+                    <!-- Left: Title & Subtitle -->
+                    <StackPanel VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,4">
+                            <Border Width="32" Height="32" CornerRadius="8" Background="#258B5CF6" Margin="0,0,10,0" VerticalAlignment="Center">
+                                <ui:SymbolIcon Symbol="Library24" FontSize="17" Foreground="#FFA78BFA" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <TextBlock Text="NCERT Textbooks Library" FontSize="19" FontWeight="Bold" VerticalAlignment="Center" />
+                            <Border Margin="10,0,0,0" Padding="8,2" CornerRadius="4" Background="#180078D4" VerticalAlignment="Center">
+                                <TextBlock Text="Classes 6–12 • Direct In-App Downloads" FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" VerticalAlignment="Center" />
+                            </Border>
+                        </StackPanel>
+                        <TextBlock Text="Official NCERT textbooks downloaded directly inside StudySuit — open any book or chapter with AI study partner &amp; voice readout."
+                                   FontSize="11.5"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <!-- Row 1: Filters Bar (Search, Class, Subject, Only Downloaded) -->
+            <Border Grid.Row="1"
+                    Padding="28,10,28,10"
+                    BorderThickness="0,0,0,1"
+                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                    Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}">
+                <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- Search Input -->
+                    <ui:TextBox Width="260"
+                                PlaceholderText="Search books, subjects, topics..."
+                                Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                ClearButtonEnabled="True"
+                                Margin="0,0,14,0"
+                                VerticalAlignment="Center">
+                        <ui:TextBox.Icon>
+                            <ui:SymbolIcon Symbol="Search24" FontSize="13" />
+                        </ui:TextBox.Icon>
+                    </ui:TextBox>
+
+                    <!-- Class Filter Dropdown -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,14,0">
+                        <TextBlock Text="Class:" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <ComboBox ItemsSource="{Binding ClassOptions}"
+                                  SelectedItem="{Binding SelectedClassOption}"
+                                  Width="130"
+                                  Height="32"
+                                  VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <!-- Subject Filter Dropdown -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,14,0">
+                        <TextBlock Text="Subject:" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <ComboBox ItemsSource="{Binding SubjectFilters}"
+                                  SelectedItem="{Binding SelectedSubject}"
+                                  Width="150"
+                                  Height="32"
+                                  VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <!-- Only Downloaded Checkbox -->
+                    <CheckBox IsChecked="{Binding OnlyDownloaded}"
+                              Content="Downloaded Only"
+                              FontSize="12"
+                              FontWeight="SemiBold"
+                              VerticalAlignment="Center"
+                              Margin="0,0,14,0" />
+
+                    <!-- Reset Filter Button -->
+                    <ui:Button Appearance="Transparent"
+                               Padding="8,4"
+                               VerticalAlignment="Center"
+                               Command="{Binding SelectSubjectCommand}"
+                               CommandParameter="All"
+                               ToolTip="Reset all filters">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon Symbol="ArrowReset24" FontSize="13" Margin="0,0,4,0" />
+                            <TextBlock Text="Reset Filters" FontSize="11.5" />
+                        </StackPanel>
+                    </ui:Button>
+                </WrapPanel>
+            </Border>
+
+            <!-- Row 2: Books Catalog Grid -->
+            <ScrollViewer Grid.Row="2"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          Padding="24,18">
+                <StackPanel>
+                    <!-- Global Status / Notification Banner -->
+                    <Border Visibility="{Binding GlobalStatusMessage, Converter={StaticResource NullToVis}}"
+                            Background="#1A3B82F6"
+                            BorderBrush="#403B82F6"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="14,8"
+                            Margin="0,0,0,14">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <ui:SymbolIcon Symbol="Info24" FontSize="14" Foreground="#FF60A5FA" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding GlobalStatusMessage}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Books Cards List -->
+                    <ItemsControl ItemsSource="{Binding FilteredBooks}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type models:NcertBookItem}">
+                                <Border Width="370"
+                                        CornerRadius="12"
+                                        Padding="16"
+                                        Margin="0,0,16,16"
+                                        Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                        BorderThickness="1"
+                                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
+                                    <Border.Effect>
+                                        <DropShadowEffect BlurRadius="12"
+                                                          ShadowDepth="2"
+                                                          Direction="270"
+                                                          Opacity="0.12"
+                                                          Color="Black" />
+                                    </Border.Effect>
+
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+
+                                        <!-- Row 0: Top Badges & Subject Header -->
+                                        <DockPanel Grid.Row="0" Margin="0,0,0,10">
+                                            <Border DockPanel.Dock="Right"
+                                                    Padding="8,3"
+                                                    CornerRadius="6"
+                                                    Background="{DynamicResource SubtleFillColorSecondaryBrush}">
+                                                <TextBlock Text="{Binding StatusBadgeText}"
+                                                           FontSize="11"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                            </Border>
+
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <Border Padding="8,3"
+                                                        CornerRadius="6"
+                                                        Background="#253B82F6"
+                                                        Margin="0,0,6,0">
+                                                    <TextBlock Text="{Binding ClassDisplay}"
+                                                               FontSize="11.5"
+                                                               FontWeight="Bold"
+                                                               Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                                                </Border>
+
+                                                <Border Padding="8,3"
+                                                        CornerRadius="6"
+                                                        Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                                                        Margin="0,0,6,0">
+                                                    <TextBlock Text="{Binding Subject}"
+                                                               FontSize="11"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                                                </Border>
+
+                                                <TextBlock Text="{Binding EstimatedSizeDisplay}"
+                                                           FontSize="11"
+                                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                                           VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </DockPanel>
+
+                                        <!-- Row 1: Book Title & Description -->
+                                        <StackPanel Grid.Row="1" Margin="0,0,0,12">
+                                            <TextBlock Text="{Binding Title}"
+                                                       FontSize="15"
+                                                       FontWeight="Bold"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Margin="0,0,0,4" />
+                                            <TextBlock Text="{Binding Description}"
+                                                       FontSize="11.5"
+                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                       TextWrapping="Wrap"
+                                                       MaxHeight="36"
+                                                       TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+
+                                        <!-- Row 2: Download Progress Bar (When downloading) -->
+                                        <StackPanel Grid.Row="2"
+                                                    Margin="0,0,0,10"
+                                                    Visibility="{Binding IsDownloading, Converter={StaticResource BoolToVis}}">
+                                            <ProgressBar Value="{Binding DownloadProgressPercent}"
+                                                         Maximum="100"
+                                                         Height="6"
+                                                         Margin="0,0,0,4" />
+                                            <TextBlock Text="{Binding DownloadStatusText}"
+                                                       FontSize="11"
+                                                       Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                                        </StackPanel>
+
+                                        <!-- Row 3: Action Buttons -->
+                                        <DockPanel Grid.Row="3">
+                                            <!-- Right: Chapters Drawer toggle & Delete Button -->
+                                            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
+                                                <!-- Chapters toggle -->
+                                                <ui:Button Appearance="Secondary"
+                                                           Padding="10,5"
+                                                           Margin="0,0,6,0"
+                                                           Command="{Binding DataContext.ToggleChaptersCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                           CommandParameter="{Binding}"
+                                                           Visibility="{Binding HasMultipleChapters, Converter={StaticResource BoolToVis}}"
+                                                           ToolTip="View individual chapter PDFs">
+                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <ui:SymbolIcon Symbol="DocumentBulletList24" FontSize="13" Margin="0,0,4,0" VerticalAlignment="Center" />
+                                                        <TextBlock Text="Chapters" FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                </ui:Button>
+
+                                                <!-- Delete button (visible when downloaded) -->
+                                                <ui:Button Appearance="Transparent"
+                                                           Padding="6,5"
+                                                           Command="{Binding DataContext.DeleteBookCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                           CommandParameter="{Binding}"
+                                                           Visibility="{Binding IsDownloaded, Converter={StaticResource BoolToVis}}"
+                                                           ToolTip="Delete downloaded book to free up disk space">
+                                                    <ui:SymbolIcon Symbol="Delete24" FontSize="14" Foreground="#FFF87171" />
+                                                </ui:Button>
+                                            </StackPanel>
+
+                                            <!-- Left: Download Button (when not downloaded) -->
+                                            <ui:Button Appearance="Primary"
+                                                       Padding="14,6"
+                                                       Command="{Binding DataContext.DownloadBookCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                       CommandParameter="{Binding}"
+                                                       Visibility="{Binding IsDownloaded, Converter={StaticResource InverseBoolToVis}}"
+                                                       IsEnabled="{Binding IsDownloading, Converter={StaticResource InverseBoolToVis}}">
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                                    <TextBlock Text="Download Book" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </ui:Button>
+
+                                            <!-- Left: Open in Reader Button (when downloaded) -->
+                                            <ui:Button Appearance="Primary"
+                                                       Padding="14,6"
+                                                       Command="{Binding DataContext.OpenBookCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                       CommandParameter="{Binding}"
+                                                       Visibility="{Binding IsDownloaded, Converter={StaticResource BoolToVis}}">
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <ui:SymbolIcon Symbol="BookOpen24" FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                                    <TextBlock Text="Open Book in Reader" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </ui:Button>
+                                        </DockPanel>
+
+                                        <!-- Row 4: Expandable Chapters Drawer -->
+                                        <Border Grid.Row="4"
+                                                Margin="0,12,0,0"
+                                                Padding="10"
+                                                CornerRadius="8"
+                                                Background="{DynamicResource LayerFillColorDefaultBrush}"
+                                                BorderThickness="1"
+                                                BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                                                Visibility="{Binding AreChaptersExpanded, Converter={StaticResource BoolToVis}}">
+                                            <StackPanel>
+                                                <TextBlock Text="Select a chapter to open directly in reader:"
+                                                           FontSize="11"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                           Margin="0,0,0,6" />
+                                                <ItemsControl ItemsSource="{Binding Chapters}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate DataType="{x:Type models:NcertChapterItem}">
+                                                            <ui:Button Appearance="Transparent"
+                                                                       HorizontalAlignment="Stretch"
+                                                                       HorizontalContentAlignment="Left"
+                                                                       Padding="8,4"
+                                                                       Margin="0,0,0,2"
+                                                                       Command="{Binding DataContext.Library.OpenChapterCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                       CommandParameter="{Binding}">
+                                                                <DockPanel LastChildFill="True">
+                                                                    <ui:SymbolIcon Symbol="ArrowRight24" FontSize="11" DockPanel.Dock="Right" Foreground="{DynamicResource TextFillColorTertiaryBrush}" VerticalAlignment="Center" />
+                                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                                        <ui:SymbolIcon Symbol="DocumentPdf24" FontSize="13" Foreground="#FFEF4444" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                                                        <TextBlock Text="{Binding DisplayText}" FontSize="11.5" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                                    </StackPanel>
+                                                                </DockPanel>
+                                                            </ui:Button>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </Border>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- Empty Results State -->
+                    <Border Padding="32"
+                            CornerRadius="12"
+                            Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                            BorderThickness="1"
+                            BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Top"
+                            Margin="0,32,0,0"
+                            Visibility="{Binding HasNoMatchingBooks, Converter={StaticResource BoolToVis}}">
+                        <StackPanel HorizontalAlignment="Center">
+                            <ui:SymbolIcon Symbol="SearchVisual24" FontSize="36" Foreground="{DynamicResource TextFillColorSecondaryBrush}" HorizontalAlignment="Center" Margin="0,0,0,12" />
+                            <TextBlock Text="No textbooks matched your filters"
+                                       FontSize="15"
+                                       FontWeight="Bold"
+                                       HorizontalAlignment="Center"
+                                       Margin="0,0,0,4" />
+                            <TextBlock Text="Try clearing your search text or switching to All Classes / All Subjects."
+                                       FontSize="12"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                       HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
         </Grid>
 
             <!-- Loading Overlay -->

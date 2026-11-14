@@ -14,7 +14,8 @@ public enum AnnotationTool
     Arrow,
     StickyNote,
     TextBox,
-    Eraser
+    Eraser,
+    CircleToSearch
 }
 
 public enum AnnotationType

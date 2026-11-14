@@ -44,6 +44,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public NotesViewModel Notes { get; }
     public NewsFeedViewModel NewsFeed { get; }
     public AiAssistantViewModel AiAssistant { get; }
+    public NcertLibraryViewModel Library { get; }
 
     public ObservableCollection<DocumentTabViewModel> Tabs { get; } = [];
     public ObservableCollection<RecentFileItem> RecentFiles { get; } = [];
@@ -68,6 +69,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private bool _isFeedActive;
+
+    [ObservableProperty]
+    private bool _isLibraryActive;
 
     [ObservableProperty]
     private bool _isSpeakingCurrentPage;
@@ -146,10 +150,11 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public bool HasOpenDocument => SelectedTab is not null;
     public bool HasAnyTabs => Tabs.Count > 0;
-    public bool ShowHomeDashboard => !IsNotesActive && !IsFeedActive && (IsHomeActive || SelectedTab is null);
+    public bool ShowHomeDashboard => !IsNotesActive && !IsFeedActive && !IsLibraryActive && (IsHomeActive || SelectedTab is null);
     public bool ShowNotesStudio => IsNotesActive;
     public bool ShowNewsFeed => IsFeedActive;
-    public bool ShowDocumentReader => !IsHomeActive && !IsNotesActive && !IsFeedActive && SelectedTab is not null;
+    public bool ShowNcertLibrary => IsLibraryActive;
+    public bool ShowDocumentReader => !IsHomeActive && !IsNotesActive && !IsFeedActive && !IsLibraryActive && SelectedTab is not null;
     public double NightLightOverlayOpacity => IsNightLightEnabled ? Math.Clamp(NightLightLevel / 100.0, 0.0, 1.0) * 0.52 : 0.0;
     public bool HasRecentFiles => RecentFiles.Count > 0;
     public bool HasPinnedFiles => PinnedFiles.Count > 0;
@@ -227,7 +232,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             aiSettingsService ?? new AiSettingsService(),
             AiChatService,
             webResearchService ?? new WebResearchService(),
-            _voiceReadoutService);
+            _voiceReadoutService,
+            null,
+            _llamaAutoSetupService);
         AiAssistant.GetActivePdfContextAsync = GetActivePdfContextForAiAsync;
         AiAssistant.HasOpenPdfProvider = () => SelectedTab is not null;
         AiAssistant.SearchPdfToolAsync = SearchActivePdfForAiAsync;
@@ -260,6 +267,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         {
             StopPdfSpeech();
             AiAssistant.StopSpeaking();
+        };
+
+        Library = new NcertLibraryViewModel();
+        Library.BookOpenRequested += async path =>
+        {
+            IsLibraryActive = false;
+            await OpenFileAsync(path);
         };
 
         _userState = _recentFilesService.Load();
@@ -297,13 +311,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             IsHomeActive = false;
             IsNotesActive = false;
             IsFeedActive = false;
+            IsLibraryActive = false;
             GlobalStatusText = $"{value.DocumentInfo.FileName} • {value.PageCount} pages • {value.FileSizeDisplay}";
             StopwatchSessionLabel = $"Studying: {value.DocumentInfo.FileName}";
             _ = value.RenderAroundCurrentPageAsync();
         }
         else
         {
-            if (!IsNotesActive && !IsFeedActive)
+            if (!IsNotesActive && !IsFeedActive && !IsLibraryActive)
             {
                 IsHomeActive = true;
             }
@@ -320,13 +335,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         {
             IsNotesActive = false;
             IsFeedActive = false;
+            IsLibraryActive = false;
             IsPropertiesOpen = false;
             IsSearchBarVisible = false;
             RefreshDashboard();
             RefreshStudyPlannerCollections();
             GlobalStatusText = "Home Dashboard • Study timer, calendar, tasks & PDFs";
         }
-        else if (!IsNotesActive && !IsFeedActive && SelectedTab is not null)
+        else if (!IsNotesActive && !IsFeedActive && !IsLibraryActive && SelectedTab is not null)
         {
             GlobalStatusText = $"{SelectedTab.DocumentInfo.FileName} • {SelectedTab.PageCount} pages • {SelectedTab.FileSizeDisplay}";
         }
@@ -340,11 +356,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         {
             IsHomeActive = false;
             IsFeedActive = false;
+            IsLibraryActive = false;
             IsPropertiesOpen = false;
             IsSearchBarVisible = false;
             GlobalStatusText = "Note-Taking Studio • Handwriting fonts, equations, charts, sketches & pictures";
         }
-        else if (!IsHomeActive && !IsFeedActive && SelectedTab is not null)
+        else if (!IsHomeActive && !IsFeedActive && !IsLibraryActive && SelectedTab is not null)
         {
             GlobalStatusText = $"{SelectedTab.DocumentInfo.FileName} • {SelectedTab.PageCount} pages • {SelectedTab.FileSizeDisplay}";
         }
@@ -358,12 +375,33 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         {
             IsHomeActive = false;
             IsNotesActive = false;
+            IsLibraryActive = false;
             IsPropertiesOpen = false;
             IsSearchBarVisible = false;
             GlobalStatusText = "News & Current Affairs Feed • Daily, Weekly & Monthly digests";
             _ = NewsFeed.EnsureLoadedAsync();
         }
-        else if (!IsHomeActive && !IsNotesActive && SelectedTab is not null)
+        else if (!IsHomeActive && !IsNotesActive && !IsLibraryActive && SelectedTab is not null)
+        {
+            GlobalStatusText = $"{SelectedTab.DocumentInfo.FileName} • {SelectedTab.PageCount} pages • {SelectedTab.FileSizeDisplay}";
+        }
+
+        NotifyWorkspaceVisibilityProperties();
+    }
+
+    partial void OnIsLibraryActiveChanged(bool value)
+    {
+        if (value)
+        {
+            IsHomeActive = false;
+            IsNotesActive = false;
+            IsFeedActive = false;
+            IsPropertiesOpen = false;
+            IsSearchBarVisible = false;
+            GlobalStatusText = "NCERT Library • Browse, download and read official Class 6–12 textbooks";
+            _ = Library.RefreshStatesAsync();
+        }
+        else if (!IsHomeActive && !IsNotesActive && !IsFeedActive && SelectedTab is not null)
         {
             GlobalStatusText = $"{SelectedTab.DocumentInfo.FileName} • {SelectedTab.PageCount} pages • {SelectedTab.FileSizeDisplay}";
         }
@@ -675,6 +713,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         IsNotesActive = false;
         IsFeedActive = false;
+        IsLibraryActive = false;
         IsHomeActive = true;
     }
 
@@ -683,6 +722,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         IsHomeActive = false;
         IsFeedActive = false;
+        IsLibraryActive = false;
         IsNotesActive = true;
     }
 
@@ -691,7 +731,17 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         IsHomeActive = false;
         IsNotesActive = false;
+        IsLibraryActive = false;
         IsFeedActive = true;
+    }
+
+    [RelayCommand]
+    public void ShowLibrary()
+    {
+        IsHomeActive = false;
+        IsNotesActive = false;
+        IsFeedActive = false;
+        IsLibraryActive = true;
     }
 
     [RelayCommand]
@@ -706,6 +756,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         IsHomeActive = false;
         IsNotesActive = false;
         IsFeedActive = false;
+        IsLibraryActive = false;
     }
 
     [RelayCommand]
@@ -837,6 +888,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             IsHomeActive = false;
             IsNotesActive = false;
             IsFeedActive = false;
+            IsLibraryActive = false;
             if (preferredStartPage is int targetPage)
             {
                 existingTab.GoToPage(targetPage);
@@ -896,6 +948,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             SelectedTab = tab;
             IsHomeActive = false;
             IsNotesActive = false;
+            IsFeedActive = false;
+            IsLibraryActive = false;
 
             _recentFilesService.RecordOpenedFile(
                 _userState,
@@ -1343,6 +1397,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(ShowHomeDashboard));
         OnPropertyChanged(nameof(ShowNotesStudio));
         OnPropertyChanged(nameof(ShowNewsFeed));
+        OnPropertyChanged(nameof(ShowNcertLibrary));
         OnPropertyChanged(nameof(ShowDocumentReader));
     }
 

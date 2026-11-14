@@ -134,9 +134,9 @@ public sealed partial class NewsFeedService : INewsFeedService
         var doc = XDocument.Parse(xmlContent);
         var cutoff = timeframe switch
         {
-            NewsTimeframe.Daily => DateTime.UtcNow.AddDays(-2),
-            NewsTimeframe.Weekly => DateTime.UtcNow.AddDays(-9),
-            _ => DateTime.UtcNow.AddDays(-35)
+            NewsTimeframe.Daily => DateTime.UtcNow.AddDays(-7),
+            NewsTimeframe.Weekly => DateTime.UtcNow.AddDays(-21),
+            _ => DateTime.UtcNow.AddDays(-90)
         };
 
         var list = new List<NewsFeedItem>();

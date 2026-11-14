@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "hEEQBQDxPbc=",
+  "dgSpecHash": "Stg8hP0rDT0=",
   "success": true,
   "projectFilePath": "D:\\studysuit\\src\\StudySuit.PdfReader\\StudySuit.PdfReader.csproj",
   "expectedPackageFiles": [
@@ -8,7 +8,6 @@
     "C:\\Users\\SURYA\\.nuget\\packages\\bblanchon.pdfium.macos\\152.0.7961\\bblanchon.pdfium.macos.152.0.7961.nupkg.sha512",
     "C:\\Users\\SURYA\\.nuget\\packages\\bblanchon.pdfium.win32\\152.0.7961\\bblanchon.pdfium.win32.152.0.7961.nupkg.sha512",
     "C:\\Users\\SURYA\\.nuget\\packages\\communitytoolkit.mvvm\\8.4.2\\communitytoolkit.mvvm.8.4.2.nupkg.sha512",
-    "C:\\Users\\SURYA\\.nuget\\packages\\microsoft.net.illink.tasks\\8.0.34\\microsoft.net.illink.tasks.8.0.34.nupkg.sha512",
     "C:\\Users\\SURYA\\.nuget\\packages\\microsoft.web.webview2\\1.0.4314.35\\microsoft.web.webview2.1.0.4314.35.nupkg.sha512",
     "C:\\Users\\SURYA\\.nuget\\packages\\pdfpig\\0.1.16\\pdfpig.0.1.16.nupkg.sha512",
     "C:\\Users\\SURYA\\.nuget\\packages\\pdftoimage\\5.4.0\\pdftoimage.5.4.0.nupkg.sha512",
@@ -19,11 +18,8 @@
     "C:\\Users\\SURYA\\.nuget\\packages\\wpf-ui\\4.3.0\\wpf-ui.4.3.0.nupkg.sha512",
     "C:\\Users\\SURYA\\.nuget\\packages\\wpf-ui.abstractions\\4.3.0\\wpf-ui.abstractions.4.3.0.nupkg.sha512",
     "C:\\Users\\SURYA\\.nuget\\packages\\microsoft.netcore.app.ref\\8.0.34\\microsoft.netcore.app.ref.8.0.34.nupkg.sha512",
-    "C:\\Users\\SURYA\\.nuget\\packages\\microsoft.netcore.app.runtime.win-x64\\8.0.34\\microsoft.netcore.app.runtime.win-x64.8.0.34.nupkg.sha512",
     "C:\\Users\\SURYA\\.nuget\\packages\\microsoft.windowsdesktop.app.ref\\8.0.34\\microsoft.windowsdesktop.app.ref.8.0.34.nupkg.sha512",
-    "C:\\Users\\SURYA\\.nuget\\packages\\microsoft.windowsdesktop.app.runtime.win-x64\\8.0.34\\microsoft.windowsdesktop.app.runtime.win-x64.8.0.34.nupkg.sha512",
     "C:\\Users\\SURYA\\.nuget\\packages\\microsoft.aspnetcore.app.ref\\8.0.34\\microsoft.aspnetcore.app.ref.8.0.34.nupkg.sha512",
-    "C:\\Users\\SURYA\\.nuget\\packages\\microsoft.aspnetcore.app.runtime.win-x64\\8.0.34\\microsoft.aspnetcore.app.runtime.win-x64.8.0.34.nupkg.sha512",
     "C:\\Users\\SURYA\\.nuget\\packages\\microsoft.netcore.app.host.win-x64\\8.0.34\\microsoft.netcore.app.host.win-x64.8.0.34.nupkg.sha512"
   ],
   "logs": []

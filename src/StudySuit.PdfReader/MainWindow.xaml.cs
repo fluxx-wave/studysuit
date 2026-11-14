@@ -52,6 +52,7 @@ public partial class MainWindow : FluentWindow
         InitializeComponent();
         _viewModel = viewModel;
         DataContext = _viewModel;
+        AdjustWindowToDisplayViewport();
 
         _noteAutoSaveTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
@@ -103,6 +104,111 @@ public partial class MainWindow : FluentWindow
             _feedSmoothScroller?.Dispose();
         };
     }
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        AdjustWindowToDisplayViewport();
+    }
+
+    private void AdjustWindowToDisplayViewport()
+    {
+        try
+        {
+            double workLeft = 0;
+            double workTop = 0;
+            double workWidth = SystemParameters.WorkArea.Width;
+            double workHeight = SystemParameters.WorkArea.Height;
+
+            var helper = new System.Windows.Interop.WindowInteropHelper(this);
+            if (helper.Handle != IntPtr.Zero)
+            {
+                var hMonitor = MonitorFromWindow(helper.Handle, MONITOR_DEFAULTTONEAREST);
+                if (hMonitor != IntPtr.Zero)
+                {
+                    var mi = new MONITORINFO { cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<MONITORINFO>() };
+                    if (GetMonitorInfo(hMonitor, ref mi))
+                    {
+                        var dpi = VisualTreeHelper.GetDpi(this);
+                        double dpiX = dpi.DpiScaleX > 0 ? dpi.DpiScaleX : 1.0;
+                        double dpiY = dpi.DpiScaleY > 0 ? dpi.DpiScaleY : 1.0;
+
+                        workLeft = mi.rcWork.left / dpiX;
+                        workTop = mi.rcWork.top / dpiY;
+                        workWidth = (mi.rcWork.right - mi.rcWork.left) / dpiX;
+                        workHeight = (mi.rcWork.bottom - mi.rcWork.top) / dpiY;
+                    }
+                }
+            }
+
+            if (workWidth <= 0 || workHeight <= 0)
+            {
+                workWidth = SystemParameters.WorkArea.Width > 0 ? SystemParameters.WorkArea.Width : 1280;
+                workHeight = SystemParameters.WorkArea.Height > 0 ? SystemParameters.WorkArea.Height : 720;
+            }
+
+            // Always ensure the normal (restored) window size comfortably fits the screen with margins
+            double targetWidth = Math.Clamp(workWidth * 0.90, 720, 1380);
+            double targetHeight = Math.Clamp(workHeight * 0.88, 520, 860);
+
+            // Never let normal size exceed the work area (leave margin for dragging and system chrome)
+            targetWidth = Math.Min(targetWidth, Math.Max(540, workWidth - 24));
+            targetHeight = Math.Min(targetHeight, Math.Max(460, workHeight - 24));
+
+            Width = targetWidth;
+            Height = targetHeight;
+            Left = workLeft + Math.Max(0, (workWidth - targetWidth) / 2.0);
+            Top = workTop + Math.Max(0, (workHeight - targetHeight) / 2.0);
+
+            // On compact laptop screens (1366x768, 1280x800, or scaled 1080p where work area width <= 1366 or height <= 768),
+            // start maximized so all controls, title bar, tabs, and status bar are fully visible without off-screen clipping.
+            if (workWidth <= 1366 || workHeight <= 768)
+            {
+                WindowState = WindowState.Maximized;
+            }
+        }
+        catch
+        {
+            // Graceful fallback to SystemParameters.WorkArea
+            double fallbackW = SystemParameters.WorkArea.Width;
+            double fallbackH = SystemParameters.WorkArea.Height;
+            if (fallbackW > 0 && fallbackH > 0)
+            {
+                Width = Math.Min(fallbackW - 20, 1180);
+                Height = Math.Min(fallbackH - 20, 720);
+                if (fallbackW <= 1366 || fallbackH <= 768)
+                {
+                    WindowState = WindowState.Maximized;
+                }
+            }
+        }
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct RECT
+    {
+        public int left;
+        public int top;
+        public int right;
+        public int bottom;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    private struct MONITORINFO
+    {
+        public uint cbSize;
+        public RECT rcMonitor;
+        public RECT rcWork;
+        public uint dwFlags;
+    }
+
+    private const uint MONITOR_DEFAULTTONEAREST = 0x00000002;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
 
     public void AnimateThemeTransition()
     {
@@ -1183,6 +1289,30 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    private void PageSurface_LostMouseCapture(object sender, MouseEventArgs e)
+    {
+        if (_isPointerDragging && _activeSurface is not null)
+        {
+            FinishPointerInteraction(_latestDragPoint);
+        }
+    }
+
+    private void PageSurface_LostTouchCapture(object sender, TouchEventArgs e)
+    {
+        if (_isPointerDragging && _activeSurface is not null)
+        {
+            FinishPointerInteraction(_latestDragPoint);
+        }
+    }
+
+    private void PageSurface_LostStylusCapture(object sender, StylusEventArgs e)
+    {
+        if (_isPointerDragging && _activeSurface is not null)
+        {
+            FinishPointerInteraction(_latestDragPoint);
+        }
+    }
+
     private bool StartPointerInteraction(Grid surface, PdfPageViewModel pageVm, Point pos)
     {
         if (_wiredTab is null)
@@ -1248,23 +1378,13 @@ public partial class MainWindow : FluentWindow
         if (IsWordBrushTool(tool))
         {
             _inkCapturePoints.Add(pos);
-            bool isLineMarkup = tool is AnnotationTool.Underline or AnnotationTool.Strikethrough;
             if (FindVisualChildByName<Polyline>(surface, "PreviewInk") is { } poly)
             {
                 poly.Points = [pos];
                 poly.Stroke = brush;
-                poly.Opacity = isLineMarkup ? 0.95 : 0.42;
-                poly.StrokeThickness = isLineMarkup
-                    ? Math.Max(2.5, _wiredTab.SelectedStrokeWidth * zoomScale)
-                    : Math.Max(10.0, _wiredTab.SelectedStrokeWidth * 4.0) * zoomScale;
+                poly.Opacity = 0.42;
+                poly.StrokeThickness = Math.Max(10.0, _wiredTab.SelectedStrokeWidth * 4.0) * zoomScale;
             }
-
-            AnnotationType markupType = tool switch
-            {
-                AnnotationTool.Underline => AnnotationType.Underline,
-                AnnotationTool.Strikethrough => AnnotationType.Strikethrough,
-                _ => AnnotationType.Highlight
-            };
 
             _ = Task.Run(async () =>
             {
@@ -1274,7 +1394,7 @@ public partial class MainWindow : FluentWindow
                     ToNormalizedPoint(pos, surface),
                     _paintedWordIndices,
                     brush,
-                    markupType);
+                    AnnotationType.Highlight);
 
                 if (!hitWords)
                 {
@@ -1299,17 +1419,23 @@ public partial class MainWindow : FluentWindow
 
         double strokeW = Math.Max(1.5, _wiredTab.SelectedStrokeWidth * zoomScale);
 
-        if (tool is AnnotationTool.Ink or AnnotationTool.Brush)
+        if (tool is AnnotationTool.Ink or AnnotationTool.Brush or AnnotationTool.Underline or AnnotationTool.Strikethrough or AnnotationTool.CircleToSearch)
         {
             _inkCapturePoints.Add(pos);
             if (FindVisualChildByName<Polyline>(surface, "PreviewInk") is { } poly)
             {
                 poly.Points = [pos];
-                poly.Stroke = brush;
-                poly.Opacity = tool == AnnotationTool.Brush ? 0.42 : 0.92;
-                poly.StrokeThickness = tool == AnnotationTool.Brush
-                    ? Math.Max(10.0, _wiredTab.SelectedStrokeWidth * 4.0) * zoomScale
-                    : strokeW;
+                poly.Stroke = tool == AnnotationTool.CircleToSearch
+                    ? new SolidColorBrush(Color.FromRgb(0x38, 0xBD, 0xF8))
+                    : brush;
+                poly.Opacity = tool == AnnotationTool.Brush ? 0.42 : 0.95;
+                poly.StrokeThickness = tool == AnnotationTool.CircleToSearch
+                    ? 3.2
+                    : (tool == AnnotationTool.Brush
+                        ? Math.Max(10.0, _wiredTab.SelectedStrokeWidth * 4.0) * zoomScale
+                        : (tool is AnnotationTool.Underline or AnnotationTool.Strikethrough)
+                            ? Math.Max(2.5, _wiredTab.SelectedStrokeWidth * zoomScale)
+                            : strokeW);
                 poly.Visibility = Visibility.Visible;
             }
         }
@@ -1385,14 +1511,6 @@ public partial class MainWindow : FluentWindow
                 _lastBrushPoint = current;
                 var surface = _activeSurface;
                 var pageVm = _activeSurfacePage;
-                var tool = _activeDragTool;
-                AnnotationType markupType = tool switch
-                {
-                    AnnotationTool.Underline => AnnotationType.Underline,
-                    AnnotationTool.Strikethrough => AnnotationType.Strikethrough,
-                    _ => AnnotationType.Highlight
-                };
-
                 _ = Task.Run(async () =>
                 {
                     try
@@ -1403,7 +1521,7 @@ public partial class MainWindow : FluentWindow
                             ToNormalizedPoint(current, surface),
                             _paintedWordIndices,
                             CreateBrushFromHex(_wiredTab.SelectedColorHex),
-                            markupType);
+                            AnnotationType.Highlight);
 
                         await Dispatcher.InvokeAsync(() =>
                         {
@@ -1432,7 +1550,7 @@ public partial class MainWindow : FluentWindow
             return;
         }
 
-        if (_activeDragTool is AnnotationTool.Ink or AnnotationTool.Brush)
+        if (_activeDragTool is AnnotationTool.Ink or AnnotationTool.Brush or AnnotationTool.Underline or AnnotationTool.Strikethrough or AnnotationTool.CircleToSearch)
         {
             if (_inkCapturePoints.Count == 0 ||
                 (Math.Abs(current.X - _inkCapturePoints[^1].X) >= 2 || Math.Abs(current.Y - _inkCapturePoints[^1].Y) >= 2))
@@ -1508,13 +1626,6 @@ public partial class MainWindow : FluentWindow
 
         if (IsWordBrushTool(tool))
         {
-            AnnotationType markupType = tool switch
-            {
-                AnnotationTool.Underline => AnnotationType.Underline,
-                AnnotationTool.Strikethrough => AnnotationType.Strikethrough,
-                _ => AnnotationType.Highlight
-            };
-
             // Flush final sweep step before committing
             await _wiredTab.PaintBrushStepAsync(
                 pageVm.PageNumber,
@@ -1522,13 +1633,13 @@ public partial class MainWindow : FluentWindow
                 ToNormalizedPoint(endPoint, surface),
                 _paintedWordIndices,
                 CreateBrushFromHex(_wiredTab.SelectedColorHex),
-                markupType);
+                AnnotationType.Highlight);
 
             var strokeNorm = _inkCapturePoints
                 .Select(p => new NormalizedPoint(Math.Clamp(p.X / surfaceW, 0, 1), Math.Clamp(p.Y / surfaceH, 0, 1)))
                 .ToList();
 
-            await _wiredTab.CommitWordBrushAnnotationAsync(pageVm.PageNumber, _paintedWordIndices, strokeNorm, markupType);
+            await _wiredTab.CommitWordBrushAnnotationAsync(pageVm.PageNumber, _paintedWordIndices, strokeNorm, AnnotationType.Highlight);
             _inkCapturePoints.Clear();
             _paintedWordIndices.Clear();
             return;
@@ -1552,7 +1663,29 @@ public partial class MainWindow : FluentWindow
             return;
         }
 
-        if (tool is AnnotationTool.Ink or AnnotationTool.Brush)
+        if (tool == AnnotationTool.CircleToSearch)
+        {
+            if (_inkCapturePoints.Count >= 3)
+            {
+                double minX = _inkCapturePoints.Min(p => p.X);
+                double maxX = _inkCapturePoints.Max(p => p.X);
+                double minY = _inkCapturePoints.Min(p => p.Y);
+                double maxY = _inkCapturePoints.Max(p => p.Y);
+                double w = maxX - minX;
+                double h = maxY - minY;
+
+                if (w >= 10 && h >= 10)
+                {
+                    var normRect = new NormalizedRect(minX / surfaceW, minY / surfaceH, w / surfaceW, h / surfaceH);
+                    await HandleCircleToSearchSelectionAsync(pageVm, normRect);
+                }
+            }
+
+            _inkCapturePoints.Clear();
+            return;
+        }
+
+        if (tool is AnnotationTool.Ink or AnnotationTool.Brush or AnnotationTool.Underline or AnnotationTool.Strikethrough)
         {
             if (_inkCapturePoints.Count >= 2)
             {
@@ -1560,7 +1693,15 @@ public partial class MainWindow : FluentWindow
                     .Select(p => new NormalizedPoint(Math.Clamp(p.X / surfaceW, 0, 1), Math.Clamp(p.Y / surfaceH, 0, 1)))
                     .ToList();
 
-                if (tool == AnnotationTool.Brush)
+                if (tool == AnnotationTool.Underline)
+                {
+                    _wiredTab.AddUnderlineStrokeAnnotation(pageVm.PageNumber, normPts);
+                }
+                else if (tool == AnnotationTool.Strikethrough)
+                {
+                    _wiredTab.AddStrikethroughStrokeAnnotation(pageVm.PageNumber, normPts);
+                }
+                else if (tool == AnnotationTool.Brush)
                 {
                     _wiredTab.AddBrushAnnotation(pageVm.PageNumber, normPts);
                 }
@@ -1634,7 +1775,7 @@ public partial class MainWindow : FluentWindow
     }
 
     private static bool IsWordBrushTool(AnnotationTool tool) =>
-        tool is AnnotationTool.Highlight or AnnotationTool.Underline or AnnotationTool.Strikethrough;
+        tool == AnnotationTool.Highlight;
 
     private static void HideAllPreviewShapes(Grid surface)
     {
@@ -1685,6 +1826,122 @@ public partial class MainWindow : FluentWindow
 
     private static string Truncate(string text, int maxLen) =>
         text.Length > maxLen ? $"{text[..maxLen]}…" : text;
+
+    // ==================== CIRCLE TO SEARCH WITH AI ====================
+    private string _circleSelectionText = string.Empty;
+    private int _circleSelectionPageNumber;
+
+    private async Task HandleCircleToSearchSelectionAsync(PdfPageViewModel pageVm, NormalizedRect normRect)
+    {
+        if (_wiredTab is null) return;
+
+        _circleSelectionPageNumber = pageVm.PageNumber;
+        _circleSelectionText = await _wiredTab.ExtractTextInSelectionAsync(pageVm.PageNumber, normRect);
+
+        // Highlight selection with a friendly cyan glow
+        var rects = new List<NormalizedRect> { normRect };
+        pageVm.UpdateLiveWordSelection(rects, _wiredTab.RotationDegrees, new SolidColorBrush(Color.FromArgb(0x40, 0x38, 0xBD, 0xF8)));
+
+        CircleToSearchPageBadge.Text = $" • Page {pageVm.PageNumber}";
+        if (!string.IsNullOrWhiteSpace(_circleSelectionText))
+        {
+            CircleToSearchSnippetText.Text = $"\"{Truncate(_circleSelectionText, 180)}\"";
+            CircleToSearchSnippetText.FontStyle = FontStyles.Normal;
+        }
+        else
+        {
+            CircleToSearchSnippetText.Text = "Circled visual diagram or region (no plain text detected)";
+            CircleToSearchSnippetText.FontStyle = FontStyles.Italic;
+        }
+
+        CircleToSearchCard.Visibility = Visibility.Visible;
+        CircleToSearchCustomPromptBox.Focus();
+    }
+
+    private void CloseCircleToSearch_Click(object sender, RoutedEventArgs e)
+    {
+        CircleToSearchCard.Visibility = Visibility.Collapsed;
+        foreach (var page in _wiredTab?.Pages ?? Enumerable.Empty<PdfPageViewModel>())
+        {
+            page.ClearLiveWordSelection();
+        }
+    }
+
+    private async void CircleAction_Explain_Click(object sender, RoutedEventArgs e)
+    {
+        await ExecuteCircleAiQueryAsync("Explain this clearly with key takeaways, formulas, and concepts for my study preparation.");
+    }
+
+    private async void CircleAction_Solve_Click(object sender, RoutedEventArgs e)
+    {
+        await ExecuteCircleAiQueryAsync("Solve this step-by-step with clear derivations, mathematical formulas, and calculation steps.");
+    }
+
+    private async void CircleAction_WebSearch_Click(object sender, RoutedEventArgs e)
+    {
+        await ExecuteCircleAiQueryAsync("Search the web for up-to-date facts, current developments, and verified references regarding this topic.");
+    }
+
+    private async void CircleAction_Practice_Click(object sender, RoutedEventArgs e)
+    {
+        await ExecuteCircleAiQueryAsync("Generate 2 exam practice questions (with answers and explanations) based directly on this topic.");
+    }
+
+    private void CircleAction_Copy_Click(object sender, RoutedEventArgs e)
+    {
+        if (!string.IsNullOrWhiteSpace(_circleSelectionText))
+        {
+            Clipboard.SetText(_circleSelectionText);
+            _viewModel.GlobalStatusText = $"Copied circled text: \"{Truncate(_circleSelectionText, 60)}\"";
+        }
+        else
+        {
+            _viewModel.GlobalStatusText = "No plain text found in circled region";
+        }
+        CloseCircleToSearch_Click(sender, e);
+    }
+
+    private async void CircleAction_CustomAsk_Click(object sender, RoutedEventArgs e)
+    {
+        string custom = CircleToSearchCustomPromptBox.Text?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(custom))
+        {
+            custom = "Explain this selection in detail.";
+        }
+        CircleToSearchCustomPromptBox.Text = string.Empty;
+        await ExecuteCircleAiQueryAsync(custom);
+    }
+
+    private void CircleToSearchCustomPromptBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            CircleAction_CustomAsk_Click(sender, e);
+        }
+        else if (e.Key == Key.Escape)
+        {
+            CloseCircleToSearch_Click(sender, e);
+        }
+    }
+
+    private async Task ExecuteCircleAiQueryAsync(string userInstruction)
+    {
+        CircleToSearchCard.Visibility = Visibility.Collapsed;
+        _viewModel.IsSidebarOpen = true;
+
+        string docTitle = _wiredTab?.DocumentInfo.Title ?? _wiredTab?.DocumentInfo.FileName ?? "Document";
+        string fullPrompt;
+        if (!string.IsNullOrWhiteSpace(_circleSelectionText))
+        {
+            fullPrompt = $"[Circled on Page {_circleSelectionPageNumber} of '{docTitle}']:\n\"{_circleSelectionText}\"\n\n{userInstruction}";
+        }
+        else
+        {
+            fullPrompt = $"[Circled diagram/region on Page {_circleSelectionPageNumber} of '{docTitle}']:\n{userInstruction}";
+        }
+
+        await _viewModel.AiAssistant.SendQuickPromptAsync(fullPrompt);
+    }
 
     private void PrintButton_Click(object sender, RoutedEventArgs e)
     {

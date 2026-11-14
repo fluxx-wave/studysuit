@@ -312,10 +312,11 @@ public partial class AiSettingsDialog : FluentWindow
             bool started = await _llamaService.StartServerAsync(package.FileName, port: 8080, ct);
             UpdateLlamaServerButton();
 
-            TestStatusText.Foreground = new SolidColorBrush(Color.FromRgb(74, 222, 128));
+            TestStatusText.Foreground = new SolidColorBrush(
+                started ? Color.FromRgb(74, 222, 128) : Color.FromRgb(248, 113, 113));
             TestStatusText.Text = started
                 ? $"Local AI Server is running at http://localhost:8080/v1 with {package.DisplayName}!"
-                : $"Auto-setup finished. Click 'Start Local Server' to run offline.";
+                : $"Auto-setup finished. Server notice: {_llamaService.LastServerError ?? "Click 'Start Local Server' to run offline."}";
         }
         catch (OperationCanceledException)
         {
@@ -359,7 +360,7 @@ public partial class AiSettingsDialog : FluentWindow
                     success ? Color.FromRgb(74, 222, 128) : Color.FromRgb(248, 113, 113));
                 TestStatusText.Text = success
                     ? "Local llama.cpp server is running at http://localhost:8080/v1."
-                    : "Could not start server. Ensure llama-server.exe and the model file are installed via Auto Setup.";
+                    : $"Could not start server: {_llamaService.LastServerError ?? "Ensure llama-server.exe and model file are installed."}";
             }
         }
         finally

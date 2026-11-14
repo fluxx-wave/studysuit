@@ -99,12 +99,6 @@
           "buildTransitive/CommunityToolkit.Mvvm.targets": {}
         }
       },
-      "Microsoft.NET.ILLink.Tasks/8.0.34": {
-        "type": "package",
-        "build": {
-          "build/Microsoft.NET.ILLink.Tasks.props": {}
-        }
-      },
       "Microsoft.Web.WebView2/1.0.4314.35": {
         "type": "package",
         "build": {
@@ -356,218 +350,6 @@
           }
         }
       }
-    },
-    "net8.0-windows/win-x64": {
-      "bblanchon.PDFium.Linux/152.0.7961": {
-        "type": "package",
-        "compile": {
-          "lib/netstandard1.0/_._": {}
-        },
-        "runtime": {
-          "lib/netstandard1.0/_._": {}
-        }
-      },
-      "bblanchon.PDFium.macOS/152.0.7961": {
-        "type": "package",
-        "compile": {
-          "lib/netstandard1.0/_._": {}
-        },
-        "runtime": {
-          "lib/netstandard1.0/_._": {}
-        }
-      },
-      "bblanchon.PDFium.Win32/152.0.7961": {
-        "type": "package",
-        "compile": {
-          "lib/netstandard2.0/_._": {}
-        },
-        "runtime": {
-          "lib/netstandard2.0/_._": {}
-        },
-        "native": {
-          "runtimes/win-x64/native/pdfium.dll": {}
-        }
-      },
-      "CommunityToolkit.Mvvm/8.4.2": {
-        "type": "package",
-        "compile": {
-          "lib/net8.0/CommunityToolkit.Mvvm.dll": {
-            "related": ".xml"
-          }
-        },
-        "runtime": {
-          "lib/net8.0/CommunityToolkit.Mvvm.dll": {
-            "related": ".xml"
-          }
-        },
-        "build": {
-          "buildTransitive/CommunityToolkit.Mvvm.targets": {}
-        }
-      },
-      "Microsoft.NET.ILLink.Tasks/8.0.34": {
-        "type": "package",
-        "build": {
-          "build/Microsoft.NET.ILLink.Tasks.props": {}
-        }
-      },
-      "Microsoft.Web.WebView2/1.0.4314.35": {
-        "type": "package",
-        "native": {
-          "runtimes/win-x64/native/WebView2Loader.dll": {}
-        },
-        "build": {
-          "buildTransitive/Microsoft.Web.WebView2.targets": {}
-        }
-      },
-      "PdfPig/0.1.16": {
-        "type": "package",
-        "compile": {
-          "lib/net8.0/UglyToad.PdfPig.Core.dll": {
-            "related": ".pdb;.xml"
-          },
-          "lib/net8.0/UglyToad.PdfPig.DocumentLayoutAnalysis.dll": {
-            "related": ".pdb;.xml"
-          },
-          "lib/net8.0/UglyToad.PdfPig.Fonts.dll": {
-            "related": ".pdb;.xml"
-          },
-          "lib/net8.0/UglyToad.PdfPig.Package.dll": {
-            "related": ".pdb;.xml"
-          },
-          "lib/net8.0/UglyToad.PdfPig.Tokenization.dll": {
-            "related": ".pdb;.xml"
-          },
-          "lib/net8.0/UglyToad.PdfPig.Tokens.dll": {
-            "related": ".pdb;.xml"
-          },
-          "lib/net8.0/UglyToad.PdfPig.dll": {
-            "related": ".Core.pdb;.Core.xml;.DocumentLayoutAnalysis.pdb;.DocumentLayoutAnalysis.xml;.Fonts.pdb;.Fonts.xml;.Package.pdb;.Package.xml;.pdb;.Tokenization.pdb;.Tokenization.xml;.Tokens.pdb;.Tokens.xml;.xml"
-          }
-        },
-        "runtime": {
-          "lib/net8.0/UglyToad.PdfPig.Core.dll": {
-            "related": ".pdb;.xml"
-          },
-          "lib/net8.0/UglyToad.PdfPig.DocumentLayoutAnalysis.dll": {
-            "related": ".pdb;.xml"
-          },
-          "lib/net8.0/UglyToad.PdfPig.Fonts.dll": {
-            "related": ".pdb;.xml"
-          },
-          "lib/net8.0/UglyToad.PdfPig.Package.dll": {
-            "related": ".pdb;.xml"
-          },
-          "lib/net8.0/UglyToad.PdfPig.Tokenization.dll": {
-            "related": ".pdb;.xml"
-          },
-          "lib/net8.0/UglyToad.PdfPig.Tokens.dll": {
-            "related": ".pdb;.xml"
-          },
-          "lib/net8.0/UglyToad.PdfPig.dll": {
-            "related": ".Core.pdb;.Core.xml;.DocumentLayoutAnalysis.pdb;.DocumentLayoutAnalysis.xml;.Fonts.pdb;.Fonts.xml;.Package.pdb;.Package.xml;.pdb;.Tokenization.pdb;.Tokenization.xml;.Tokens.pdb;.Tokens.xml;.xml"
-          }
-        }
-      },
-      "PDFtoImage/5.4.0": {
-        "type": "package",
-        "dependencies": {
-          "SkiaSharp": "4.150.1",
-          "SkiaSharp.NativeAssets.Linux.NoDependencies": "4.150.1",
-          "SkiaSharp.NativeAssets.Win32": "4.150.1",
-          "SkiaSharp.NativeAssets.macOS": "4.150.1",
-          "bblanchon.PDFium.Linux": "152.0.7961",
-          "bblanchon.PDFium.Win32": "152.0.7961",
-          "bblanchon.PDFium.macOS": "152.0.7961"
-        },
-        "compile": {
-          "lib/net8.0/PDFtoImage.dll": {
-            "related": ".xml"
-          }
-        },
-        "runtime": {
-          "lib/net8.0/PDFtoImage.dll": {
-            "related": ".xml"
-          }
-        }
-      },
-      "SkiaSharp/4.150.1": {
-        "type": "package",
-        "dependencies": {
-          "SkiaSharp.NativeAssets.Win32": "4.150.1",
-          "SkiaSharp.NativeAssets.macOS": "4.150.1"
-        },
-        "compile": {
-          "ref/net6.0/SkiaSharp.dll": {}
-        },
-        "runtime": {
-          "lib/net6.0/SkiaSharp.dll": {
-            "related": ".pdb"
-          }
-        }
-      },
-      "SkiaSharp.NativeAssets.Linux.NoDependencies/4.150.1": {
-        "type": "package",
-        "compile": {
-          "lib/net6.0/_._": {}
-        },
-        "runtime": {
-          "lib/net6.0/_._": {}
-        }
-      },
-      "SkiaSharp.NativeAssets.macOS/4.150.1": {
-        "type": "package",
-        "compile": {
-          "lib/net6.0/_._": {}
-        },
-        "runtime": {
-          "lib/net6.0/_._": {}
-        }
-      },
-      "SkiaSharp.NativeAssets.Win32/4.150.1": {
-        "type": "package",
-        "compile": {
-          "lib/net6.0/_._": {}
-        },
-        "runtime": {
-          "lib/net6.0/_._": {}
-        },
-        "native": {
-          "runtimes/win-x64/native/libSkiaSharp.dll": {},
-          "runtimes/win-x64/native/libSkiaSharp.pdb": {}
-        }
-      },
-      "WPF-UI/4.3.0": {
-        "type": "package",
-        "dependencies": {
-          "WPF-UI.Abstractions": "4.3.0"
-        },
-        "compile": {
-          "lib/net8.0-windows7.0/Wpf.Ui.dll": {
-            "related": ".pdb;.xml"
-          }
-        },
-        "runtime": {
-          "lib/net8.0-windows7.0/Wpf.Ui.dll": {
-            "related": ".pdb;.xml"
-          }
-        },
-        "frameworkReferences": [
-          "Microsoft.WindowsDesktop.App.WPF"
-        ]
-      },
-      "WPF-UI.Abstractions/4.3.0": {
-        "type": "package",
-        "compile": {
-          "lib/net8.0/Wpf.Ui.Abstractions.dll": {
-            "related": ".pdb;.xml"
-          }
-        },
-        "runtime": {
-          "lib/net8.0/Wpf.Ui.Abstractions.dll": {
-            "related": ".pdb;.xml"
-          }
-        }
-      }
     }
   },
   "libraries": {
@@ -752,57 +534,6 @@
         "lib/netstandard2.0/CommunityToolkit.Mvvm.xml",
         "lib/netstandard2.1/CommunityToolkit.Mvvm.dll",
         "lib/netstandard2.1/CommunityToolkit.Mvvm.xml"
-      ]
-    },
-    "Microsoft.NET.ILLink.Tasks/8.0.34": {
-      "sha512": "AoMGwI/388svzARQ2NYC25vFOQGcf13FgQWv61TwPAdPUMOejXpQxBQHrQpXfqM7vqxxj1E3SAkX/OkE2cuChw==",
-      "type": "package",
-      "path": "microsoft.net.illink.tasks/8.0.34",
-      "hasTools": true,
-      "files": [
-        ".nupkg.metadata",
-        ".signature.p7s",
-        "Icon.png",
-        "LICENSE.TXT",
-        "Sdk/Sdk.props",
-        "THIRD-PARTY-NOTICES.TXT",
-        "analyzers/dotnet/cs/ILLink.CodeFixProvider.dll",
-        "analyzers/dotnet/cs/ILLink.RoslynAnalyzer.dll",
-        "build/Microsoft.NET.ILLink.Analyzers.props",
-        "build/Microsoft.NET.ILLink.Tasks.props",
-        "build/Microsoft.NET.ILLink.targets",
-        "microsoft.net.illink.tasks.8.0.34.nupkg.sha512",
-        "microsoft.net.illink.tasks.nuspec",
-        "tools/net472/ILLink.Tasks.dll",
-        "tools/net472/ILLink.Tasks.dll.config",
-        "tools/net472/Mono.Cecil.Mdb.dll",
-        "tools/net472/Mono.Cecil.Pdb.dll",
-        "tools/net472/Mono.Cecil.Rocks.dll",
-        "tools/net472/Mono.Cecil.dll",
-        "tools/net472/Sdk/Sdk.props",
-        "tools/net472/System.Buffers.dll",
-        "tools/net472/System.Collections.Immutable.dll",
-        "tools/net472/System.Memory.dll",
-        "tools/net472/System.Numerics.Vectors.dll",
-        "tools/net472/System.Reflection.Metadata.dll",
-        "tools/net472/System.Runtime.CompilerServices.Unsafe.dll",
-        "tools/net472/build/Microsoft.NET.ILLink.Analyzers.props",
-        "tools/net472/build/Microsoft.NET.ILLink.Tasks.props",
-        "tools/net472/build/Microsoft.NET.ILLink.targets",
-        "tools/net8.0/ILLink.Tasks.deps.json",
-        "tools/net8.0/ILLink.Tasks.dll",
-        "tools/net8.0/Mono.Cecil.Mdb.dll",
-        "tools/net8.0/Mono.Cecil.Pdb.dll",
-        "tools/net8.0/Mono.Cecil.Rocks.dll",
-        "tools/net8.0/Mono.Cecil.dll",
-        "tools/net8.0/Sdk/Sdk.props",
-        "tools/net8.0/build/Microsoft.NET.ILLink.Analyzers.props",
-        "tools/net8.0/build/Microsoft.NET.ILLink.Tasks.props",
-        "tools/net8.0/build/Microsoft.NET.ILLink.targets",
-        "tools/net8.0/illink.deps.json",
-        "tools/net8.0/illink.dll",
-        "tools/net8.0/illink.runtimeconfig.json",
-        "useSharedDesignerContext.txt"
       ]
     },
     "Microsoft.Web.WebView2/1.0.4314.35": {
@@ -1362,7 +1093,6 @@
   "projectFileDependencyGroups": {
     "net8.0-windows": [
       "CommunityToolkit.Mvvm >= 8.4.2",
-      "Microsoft.NET.ILLink.Tasks >= 8.0.34",
       "Microsoft.Web.WebView2 >= 1.0.4314.35",
       "PDFtoImage >= 5.4.0",
       "PdfPig >= 0.1.16",
@@ -1418,12 +1148,6 @@
             "target": "Package",
             "version": "[8.4.2, )"
           },
-          "Microsoft.NET.ILLink.Tasks": {
-            "suppressParent": "All",
-            "target": "Package",
-            "version": "[8.0.34, )",
-            "autoReferenced": true
-          },
           "Microsoft.Web.WebView2": {
             "target": "Package",
             "version": "[1.0.4314.35, )"
@@ -1458,10 +1182,6 @@
             "version": "[8.0.34, 8.0.34]"
           },
           {
-            "name": "Microsoft.AspNetCore.App.Runtime.win-x64",
-            "version": "[8.0.34, 8.0.34]"
-          },
-          {
             "name": "Microsoft.NETCore.App.Host.win-x64",
             "version": "[8.0.34, 8.0.34]"
           },
@@ -1470,15 +1190,7 @@
             "version": "[8.0.34, 8.0.34]"
           },
           {
-            "name": "Microsoft.NETCore.App.Runtime.win-x64",
-            "version": "[8.0.34, 8.0.34]"
-          },
-          {
             "name": "Microsoft.WindowsDesktop.App.Ref",
-            "version": "[8.0.34, 8.0.34]"
-          },
-          {
-            "name": "Microsoft.WindowsDesktop.App.Runtime.win-x64",
             "version": "[8.0.34, 8.0.34]"
           }
         ],
@@ -1491,11 +1203,6 @@
           }
         },
         "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\11.0.100/PortableRuntimeIdentifierGraph.json"
-      }
-    },
-    "runtimes": {
-      "win-x64": {
-        "#import": []
       }
     }
   }

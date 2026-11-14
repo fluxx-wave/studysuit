@@ -158,3 +158,4 @@ D:\studysuit\tests\StudySuit.PdfReader.Tests\bin\Debug\net8.0-windows\Microsoft.
 D:\studysuit\tests\StudySuit.PdfReader.Tests\bin\Debug\net8.0-windows\Microsoft.Web.WebView2.WinForms.xml
 D:\studysuit\tests\StudySuit.PdfReader.Tests\bin\Debug\net8.0-windows\StudySuit.PdfReader.runtimeconfig.dev.json
 D:\studysuit\tests\StudySuit.PdfReader.Tests\bin\Debug\net8.0-windows\StudySuit.PdfReader.Tests.runtimeconfig.dev.json
+D:\studysuit\tests\StudySuit.PdfReader.Tests\obj\Debug\net8.0-windows\StudySuit.PdfReader.Tests.sourcelink.json

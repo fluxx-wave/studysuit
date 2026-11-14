@@ -40,6 +40,7 @@ public interface ILlamaCppAutoSetupService : IDisposable
         LlamaModelPackage package,
         IProgress<(string Phase, double Percent, string Detail)>? progress = null,
         CancellationToken ct = default);
+    string? LastServerError { get; }
     Task<bool> StartServerAsync(string modelFileName, int port = 8080, CancellationToken ct = default);
     void StopServer();
     bool IsServerRunning();
@@ -84,9 +85,15 @@ public sealed partial class LlamaCppAutoSetupService : ILlamaCppAutoSetupService
     private readonly string _modelsDir;
     private Process? _serverProcess;
 
+    public string? LastServerError { get; private set; }
+
     public LlamaCppAutoSetupService(HttpClient? httpClient = null, string? customRootDir = null)
     {
         _http = httpClient ?? new HttpClient { Timeout = TimeSpan.FromHours(2) };
+        if (!_http.DefaultRequestHeaders.Contains("User-Agent"))
+        {
+            _http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 StudySuit/1.0");
+        }
         _rootDir = customRootDir ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "StudySuit.PdfReader",
@@ -194,6 +201,15 @@ public sealed partial class LlamaCppAutoSetupService : ILlamaCppAutoSetupService
             return legacyExe;
         }
 
+        if (Directory.Exists(_binDir))
+        {
+            string? foundInSub = Directory.GetFiles(_binDir, "llama-server.exe", SearchOption.AllDirectories).FirstOrDefault();
+            if (foundInSub is not null)
+            {
+                return foundInSub;
+            }
+        }
+
         // Check if llama-server is installed in PATH
         try
         {
@@ -245,6 +261,16 @@ public sealed partial class LlamaCppAutoSetupService : ILlamaCppAutoSetupService
         IProgress<(string Phase, double Percent, string Detail)>? progress = null,
         CancellationToken ct = default)
     {
+        StopServer();
+        try
+        {
+            foreach (var p in Process.GetProcessesByName("llama-server"))
+            {
+                try { p.Kill(true); p.WaitForExit(1000); } catch { }
+            }
+        }
+        catch { }
+
         string? existing = FindInstalledServerExecutable();
         if (existing is not null)
         {
@@ -371,10 +397,12 @@ public sealed partial class LlamaCppAutoSetupService : ILlamaCppAutoSetupService
     public async Task<bool> StartServerAsync(string modelFileName, int port = 8080, CancellationToken ct = default)
     {
         StopServer();
+        LastServerError = null;
 
         string? exe = FindInstalledServerExecutable();
         if (exe is null)
         {
+            LastServerError = "llama-server.exe was not found. Please click Auto Setup to install the runtime.";
             return false;
         }
 
@@ -384,9 +412,11 @@ public sealed partial class LlamaCppAutoSetupService : ILlamaCppAutoSetupService
 
         if (!File.Exists(modelPath))
         {
+            LastServerError = $"Model file '{modelFileName}' not found. Please download it via Auto Setup.";
             return false;
         }
 
+        string exeDir = Path.GetDirectoryName(exe) ?? _binDir;
         int threads = Math.Clamp(Environment.ProcessorCount - 1, 1, 16);
         string args = $"-m \"{modelPath}\" --port {port} --host 127.0.0.1 -c 2048 -t {threads} --log-disable";
 
@@ -394,25 +424,41 @@ public sealed partial class LlamaCppAutoSetupService : ILlamaCppAutoSetupService
         {
             FileName = exe,
             Arguments = args,
-            WorkingDirectory = _rootDir,
+            WorkingDirectory = exeDir,
             UseShellExecute = false,
-            CreateNoWindow = true
+            CreateNoWindow = true,
+            RedirectStandardError = true
         };
+
+        string currentPath = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+        psi.EnvironmentVariables["PATH"] = exeDir + ";" + currentPath;
 
         try
         {
             _serverProcess = Process.Start(psi);
             if (_serverProcess is null)
             {
+                LastServerError = "Failed to launch llama-server process.";
                 return false;
             }
 
-            // Ping server health for up to 6 seconds until ready
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(1) };
-            for (int i = 0; i < 12; i++)
+            // Ping server health for up to 25 seconds until ready
+            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+            for (int i = 0; i < 40; i++)
             {
-                if (ct.IsCancellationRequested || _serverProcess.HasExited)
+                if (ct.IsCancellationRequested)
                 {
+                    StopServer();
+                    LastServerError = "Server startup was cancelled.";
+                    return false;
+                }
+
+                if (_serverProcess.HasExited)
+                {
+                    string err = string.Empty;
+                    try { err = _serverProcess.StandardError.ReadToEnd(); } catch { }
+                    LastServerError = $"llama-server exited with code {_serverProcess.ExitCode}. {err}".Trim();
+                    StopServer();
                     return false;
                 }
 
@@ -430,10 +476,18 @@ public sealed partial class LlamaCppAutoSetupService : ILlamaCppAutoSetupService
                 }
             }
 
-            return true;
+            if (_serverProcess is not null && !_serverProcess.HasExited)
+            {
+                return true;
+            }
+
+            LastServerError = "Server startup timed out after 20 seconds.";
+            StopServer();
+            return false;
         }
-        catch
+        catch (Exception ex)
         {
+            LastServerError = $"Error launching server: {ex.Message}";
             StopServer();
             return false;
         }
@@ -457,6 +511,24 @@ public sealed partial class LlamaCppAutoSetupService : ILlamaCppAutoSetupService
             _serverProcess?.Dispose();
             _serverProcess = null;
         }
+
+        try
+        {
+            foreach (var p in Process.GetProcessesByName("llama-server"))
+            {
+                try
+                {
+                    p.Kill(entireProcessTree: true);
+                    p.WaitForExit(1000);
+                }
+                catch
+                {
+                }
+            }
+        }
+        catch
+        {
+        }
     }
 
     public bool IsServerRunning()
@@ -464,6 +536,17 @@ public sealed partial class LlamaCppAutoSetupService : ILlamaCppAutoSetupService
         if (_serverProcess is not null && !_serverProcess.HasExited)
         {
             return true;
+        }
+
+        try
+        {
+            if (Process.GetProcessesByName("llama-server").Length > 0)
+            {
+                return true;
+            }
+        }
+        catch
+        {
         }
 
         return false;

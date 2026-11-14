@@ -15,6 +15,7 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
     private readonly IWebResearchService _webResearchService;
     private readonly IVoiceReadoutService _voiceReadoutService;
     private readonly IAiChatHistoryService _chatHistoryService;
+    private readonly ILlamaCppAutoSetupService? _llamaService;
     private CancellationTokenSource? _activeRequestCts;
     private CancellationTokenSource? _speechCts;
     private AiChatMessage? _speakingMessage;
@@ -80,13 +81,15 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
         IAiChatService chatService,
         IWebResearchService webResearchService,
         IVoiceReadoutService? voiceReadoutService = null,
-        IAiChatHistoryService? chatHistoryService = null)
+        IAiChatHistoryService? chatHistoryService = null,
+        ILlamaCppAutoSetupService? llamaService = null)
     {
         _settingsService = settingsService;
         _chatService = chatService;
         _webResearchService = webResearchService;
         _voiceReadoutService = voiceReadoutService ?? new VoiceReadoutService();
         _chatHistoryService = chatHistoryService ?? new AiChatHistoryService();
+        _llamaService = llamaService;
 
         _settings = _settingsService.Load();
         _useWebResearch = _settings.UseInternetByDefault;
@@ -481,6 +484,36 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
 
         try
         {
+            if (Settings.Provider == AiProviderKind.LlamaCppLocal && _llamaService is not null)
+            {
+                if (!_llamaService.IsServerRunning())
+                {
+                    string? exe = _llamaService.FindInstalledServerExecutable();
+                    string modelName = string.IsNullOrWhiteSpace(Settings.ModelName) ? "qwen2.5-1.5b-instruct-q4_k_m.gguf" : Settings.ModelName;
+                    var models = _llamaService.GetDownloadedModelFiles();
+                    if (exe is not null && models.Contains(modelName))
+                    {
+                        StatusText = $"Starting local llama.cpp server ({modelName})...";
+                        bool started = await _llamaService.StartServerAsync(modelName, ct: ct);
+                        if (!started)
+                        {
+                            streamingMessage.Content = $"⚠️ Could not start local llama.cpp server: {_llamaService.LastServerError ?? "unknown error"}.\n\nPlease open Settings (⚙️) to verify local AI configuration.";
+                            StatusText = "Local server start failed";
+                            IsBusy = false;
+                            return;
+                        }
+                        StatusText = "Local llama.cpp server started!";
+                    }
+                    else
+                    {
+                        streamingMessage.Content = "⚠️ The local llama.cpp AI model is not set up on this device yet.\n\nTo use offline AI, click the **Settings (⚙️)** button at the top of the chat panel, then click **1-Click Auto Setup**. It will automatically install the lightweight model for your laptop.";
+                        StatusText = "Local model not installed";
+                        IsBusy = false;
+                        return;
+                    }
+                }
+            }
+
             string? pdfContext = null;
             if (!casual && UsePdfContext && GetActivePdfContextAsync is not null)
             {

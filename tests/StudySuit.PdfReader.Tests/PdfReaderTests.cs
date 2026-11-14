@@ -1970,6 +1970,298 @@ public sealed class PdfReaderTests : IDisposable
         }
     }
 
+    [Fact]
+    public void NcertLibraryCatalog_ContainsAllClassesAndSubjects()
+    {
+        var books = NcertLibraryCatalog.AllBooks;
+        Assert.NotEmpty(books);
+        Assert.True(books.Count >= 30);
+
+        // Verify Classes 6 to 12 exist
+        for (int c = 6; c <= 12; c++)
+        {
+            Assert.Contains(books, b => b.ClassNumber == c);
+        }
+
+        // Verify Class 10 has Science and Math
+        Assert.Contains(books, b => b.ClassNumber == 10 && b.Code == "jesc1" && b.Title.Contains("Science"));
+        Assert.Contains(books, b => b.ClassNumber == 10 && b.Code == "jemh1" && b.Title.Contains("Mathematics"));
+
+        // Verify Class 12 has Physics, Chemistry, Biology, Math
+        Assert.Contains(books, b => b.ClassNumber == 12 && b.Code == "leph1");
+        Assert.Contains(books, b => b.ClassNumber == 12 && b.Code == "lech1");
+        Assert.Contains(books, b => b.ClassNumber == 12 && b.Code == "lebo1");
+        Assert.Contains(books, b => b.ClassNumber == 12 && b.Code == "lemh1");
+    }
+
+    [Fact]
+    public async Task NcertLibraryViewModel_FiltersByClassSubjectAndSearch()
+    {
+        var libraryService = new NcertLibraryService(customLibraryRoot: Path.Combine(_tempDir, "ncert_test_lib"));
+        var vm = new NcertLibraryViewModel(libraryService);
+
+        Assert.NotEmpty(vm.AllBooks);
+        Assert.Equal(vm.AllBooks.Count, vm.FilteredBooks.Count);
+
+        // Filter by Class 10
+        vm.SelectedClassOption = "Class 10";
+        Assert.True(vm.FilteredBooks.All(b => b.ClassNumber == 10));
+        Assert.True(vm.FilteredBooks.Count >= 5);
+
+        // Filter by Subject Science within Class 10
+        vm.SelectedSubject = "Science";
+        Assert.Single(vm.FilteredBooks);
+        Assert.Equal("jesc1", vm.FilteredBooks[0].Code);
+
+        // Reset class to All
+        vm.SelectedClassOption = "All Classes";
+        vm.SelectedSubject = "Physics";
+        Assert.All(vm.FilteredBooks, b => Assert.Equal("Physics", b.Subject));
+
+        // Search query
+        vm.SelectedSubject = "All";
+        vm.SearchText = "Harappa";
+        Assert.Contains(vm.FilteredBooks, b => b.Code == "lehs1");
+
+        // Open Book Event
+        string? openedPath = null;
+        vm.BookOpenRequested += path => openedPath = path;
+
+        // Mock a downloaded book
+        var testBook = vm.FilteredBooks[0];
+        string fakeBookDir = Path.Combine(libraryService.GetLibraryRootDirectory(), testBook.Code);
+        Directory.CreateDirectory(fakeBookDir);
+        string fakePdf = Path.Combine(fakeBookDir, $"{testBook.Code}01.pdf");
+        File.WriteAllText(fakePdf, "%PDF-1.4 test");
+
+        await libraryService.RefreshDownloadStatesAsync([testBook]);
+        Assert.True(testBook.IsDownloaded);
+
+        vm.OpenBookCommand.Execute(testBook);
+        Assert.Equal(fakePdf, openedPath);
+    }
+
+    [Fact]
+    public async Task DocumentTabViewModel_AddUnderlineAndStrikethroughStroke_DrawsFreehandPolylineVectors()
+    {
+        string samplePdfPath = CreateSamplePdf("markup_stroke_test.pdf");
+        var info = await _pdfService.OpenDocumentAsync(samplePdfPath);
+        using var tab = new DocumentTabViewModel(info, _pdfService);
+
+        var strokePoints = new List<NormalizedPoint>
+        {
+            new(0.1, 0.5),
+            new(0.2, 0.51),
+            new(0.3, 0.49),
+            new(0.4, 0.52),
+            new(0.5, 0.50)
+        };
+
+        var underlineAnn = tab.AddUnderlineStrokeAnnotation(1, strokePoints);
+        Assert.NotNull(underlineAnn);
+        Assert.Equal(AnnotationType.Underline, underlineAnn.Type);
+        Assert.Equal(5, underlineAnn.Points.Count);
+        Assert.Equal(0.1, underlineAnn.Points[0].X);
+
+        var strikeAnn = tab.AddStrikethroughStrokeAnnotation(1, strokePoints);
+        Assert.NotNull(strikeAnn);
+        Assert.Equal(AnnotationType.Strikethrough, strikeAnn.Type);
+        Assert.Equal(5, strikeAnn.Points.Count);
+
+        // Verify page visual collection contains these annotations
+        var page1 = tab.Pages[0];
+        Assert.Contains(page1.VectorAnnotations, v => v.AnnotationId == underlineAnn.Id);
+        Assert.Contains(page1.VectorAnnotations, v => v.AnnotationId == strikeAnn.Id);
+    }
+
+    [Fact]
+    public void MainWindowXaml_AllSymbolsAreValidEnumValues()
+    {
+        string? dir = AppContext.BaseDirectory;
+        string xamlPath = "";
+        while (dir is not null)
+        {
+            string candidate = Path.Combine(dir, "src", "StudySuit.PdfReader", "MainWindow.xaml");
+            if (File.Exists(candidate))
+            {
+                xamlPath = candidate;
+                break;
+            }
+            dir = Path.GetDirectoryName(dir);
+        }
+        Assert.True(File.Exists(xamlPath), $"Could not find MainWindow.xaml from {AppContext.BaseDirectory}");
+
+        string xamlContent = File.ReadAllText(xamlPath);
+        var matches = System.Text.RegularExpressions.Regex.Matches(xamlContent, @"Symbol=""([^""{}]+)""");
+
+        foreach (System.Text.RegularExpressions.Match match in matches)
+        {
+            string symbolName = match.Groups[1].Value.Trim();
+            bool isValid = Enum.TryParse<Wpf.Ui.Controls.SymbolRegular>(symbolName, out _);
+            Assert.True(isValid, $"Symbol '{symbolName}' in MainWindow.xaml is not a valid SymbolRegular enum value!");
+        }
+    }
+
+    [Fact]
+    public void MainViewModel_WorkspaceTabNavigation_MutuallyExclusiveViews()
+    {
+        using var vm = new MainViewModel(
+            _pdfService,
+            new RecentFilesService(Path.Combine(_tempDir, "tabs_nav_state.json")),
+            new AnnotationService(Path.Combine(_tempDir, "tabs_nav_ann")));
+
+        // 1. Initial State: Home is active by default
+        Assert.True(vm.ShowHomeDashboard);
+        Assert.False(vm.ShowNcertLibrary);
+        Assert.False(vm.ShowNewsFeed);
+        Assert.False(vm.ShowNotesStudio);
+        Assert.False(vm.ShowDocumentReader);
+
+        // 2. Switch to NCERT Library
+        vm.ShowLibraryCommand.Execute(null);
+        Assert.True(vm.ShowNcertLibrary);
+        Assert.False(vm.ShowHomeDashboard);
+        Assert.False(vm.ShowNewsFeed);
+        Assert.False(vm.ShowNotesStudio);
+        Assert.False(vm.ShowDocumentReader);
+
+        // 3. Switch to News Feed
+        vm.ShowFeedCommand.Execute(null);
+        Assert.True(vm.ShowNewsFeed);
+        Assert.False(vm.ShowNcertLibrary);
+        Assert.False(vm.ShowHomeDashboard);
+        Assert.False(vm.ShowNotesStudio);
+        Assert.False(vm.ShowDocumentReader);
+
+        // 4. Switch to Notes Studio
+        vm.ShowNotesCommand.Execute(null);
+        Assert.True(vm.ShowNotesStudio);
+        Assert.False(vm.ShowNcertLibrary);
+        Assert.False(vm.ShowNewsFeed);
+        Assert.False(vm.ShowHomeDashboard);
+        Assert.False(vm.ShowDocumentReader);
+
+        // 5. Switch back to Home
+        vm.ShowHomeCommand.Execute(null);
+        Assert.True(vm.ShowHomeDashboard);
+        Assert.False(vm.ShowNcertLibrary);
+        Assert.False(vm.ShowNewsFeed);
+        Assert.False(vm.ShowNotesStudio);
+        Assert.False(vm.ShowDocumentReader);
+    }
+
+    [Fact]
+    public void MainWindowXaml_WorkspaceRoots_AreSolidAndProperlyScoped()
+    {
+        string? dir = AppContext.BaseDirectory;
+        string xamlPath = "";
+        while (dir is not null)
+        {
+            string candidate = Path.Combine(dir, "src", "StudySuit.PdfReader", "MainWindow.xaml");
+            if (File.Exists(candidate))
+            {
+                xamlPath = candidate;
+                break;
+            }
+            dir = Path.GetDirectoryName(dir);
+        }
+        Assert.True(File.Exists(xamlPath));
+
+        string xaml = File.ReadAllText(xamlPath);
+
+        // Ensure NcertLibraryRoot does NOT bind DataContext on its outer element (which would break ShowNcertLibrary visibility)
+        Assert.DoesNotMatch(@"<Grid\s+x:Name=""NcertLibraryRoot""[^>]*DataContext=", xaml);
+
+        // Ensure NcertLibraryRoot has solid ApplicationBackgroundBrush
+        Assert.Matches(@"<Grid\s+x:Name=""NcertLibraryRoot""[^>]*Background=""{DynamicResource ApplicationBackgroundBrush}""", xaml);
+
+        // Ensure HomeDashboardRoot has solid ApplicationBackgroundBrush
+        Assert.Matches(@"<Grid\s+x:Name=""HomeDashboardRoot""[^>]*Background=""{DynamicResource ApplicationBackgroundBrush}""", xaml);
+
+        // Ensure default window dimensions in XAML do not exceed 1200x750
+        var widthMatch = System.Text.RegularExpressions.Regex.Match(xaml, @"Width=""(\d+)""");
+        Assert.True(widthMatch.Success);
+        Assert.True(int.Parse(widthMatch.Groups[1].Value) <= 1200, "Default window Width should not exceed 1200 DIPs");
+
+        var heightMatch = System.Text.RegularExpressions.Regex.Match(xaml, @"Height=""(\d+)""");
+        Assert.True(heightMatch.Success);
+        Assert.True(int.Parse(heightMatch.Groups[1].Value) <= 750, "Default window Height should not exceed 750 DIPs");
+    }
+
+    [Fact]
+    public async Task NcertLibraryService_BackgroundThreadUpdates_DoNotThrowCollectionViewException()
+    {
+        string customRoot = Path.Combine(_tempDir, "ncert_test_books");
+        string bookCode = "testbook1";
+        string bookDir = Path.Combine(customRoot, bookCode);
+        Directory.CreateDirectory(bookDir);
+
+        // Create sample chapter PDFs
+        File.WriteAllBytes(Path.Combine(bookDir, $"{bookCode}01.pdf"), [1, 2, 3]);
+        File.WriteAllBytes(Path.Combine(bookDir, $"{bookCode}02.pdf"), [4, 5, 6]);
+
+        var service = new NcertLibraryService(customLibraryRoot: customRoot);
+        var book = new NcertBookItem
+        {
+            Code = bookCode,
+            Title = "Test Book",
+            ShortTitle = "Test",
+            ClassNumber = 10,
+            Subject = "Science"
+        };
+
+        // Run from a background thread to simulate async network completion
+        await Task.Run(async () =>
+        {
+            await service.RefreshDownloadStatesAsync([book]);
+        });
+
+        Assert.True(book.IsDownloaded);
+        Assert.Equal(2, book.Chapters.Count);
+        Assert.NotNull(book.PrimaryPdfPath);
+        Assert.True(File.Exists(book.PrimaryPdfPath));
+
+        // Test delete on background thread as well
+        await Task.Run(async () =>
+        {
+            await service.DeleteBookAsync(book);
+        });
+
+        Assert.False(book.IsDownloaded);
+        Assert.Empty(book.Chapters);
+    }
+
+    [Fact]
+    public void CircleToSearch_ToolAndXamlValidation()
+    {
+        // 1. Tool Enum has CircleToSearch
+        Assert.True(Enum.IsDefined(typeof(AnnotationTool), AnnotationTool.CircleToSearch));
+
+        // 2. MainWindow.xaml has the Circle to Search toolbar button and card
+        string? dir = AppContext.BaseDirectory;
+        string xamlPath = "";
+        while (dir is not null)
+        {
+            string candidate = Path.Combine(dir, "src", "StudySuit.PdfReader", "MainWindow.xaml");
+            if (File.Exists(candidate))
+            {
+                xamlPath = candidate;
+                break;
+            }
+            dir = Path.GetDirectoryName(dir);
+        }
+        Assert.True(File.Exists(xamlPath));
+
+        string xaml = File.ReadAllText(xamlPath);
+        Assert.Contains("ConverterParameter=CircleToSearch", xaml);
+        Assert.Contains("x:Name=\"CircleToSearchCard\"", xaml);
+        Assert.Contains("CircleAction_Explain_Click", xaml);
+        Assert.Contains("CircleAction_Solve_Click", xaml);
+        Assert.Contains("CircleAction_WebSearch_Click", xaml);
+        Assert.Contains("CircleAction_Practice_Click", xaml);
+        Assert.Contains("x:Name=\"CircleToSearchCustomPromptBox\"", xaml);
+    }
+
     private string CreateSamplePdf(string fileName)
     {
         string path = Path.Combine(_tempDir, fileName);

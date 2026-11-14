@@ -50,12 +50,6 @@
               "target": "Package",
               "version": "[8.4.2, )"
             },
-            "Microsoft.NET.ILLink.Tasks": {
-              "suppressParent": "All",
-              "target": "Package",
-              "version": "[8.0.34, )",
-              "autoReferenced": true
-            },
             "Microsoft.Web.WebView2": {
               "target": "Package",
               "version": "[1.0.4314.35, )"
@@ -90,10 +84,6 @@
               "version": "[8.0.34, 8.0.34]"
             },
             {
-              "name": "Microsoft.AspNetCore.App.Runtime.win-x64",
-              "version": "[8.0.34, 8.0.34]"
-            },
-            {
               "name": "Microsoft.NETCore.App.Host.win-x64",
               "version": "[8.0.34, 8.0.34]"
             },
@@ -102,15 +92,7 @@
               "version": "[8.0.34, 8.0.34]"
             },
             {
-              "name": "Microsoft.NETCore.App.Runtime.win-x64",
-              "version": "[8.0.34, 8.0.34]"
-            },
-            {
               "name": "Microsoft.WindowsDesktop.App.Ref",
-              "version": "[8.0.34, 8.0.34]"
-            },
-            {
-              "name": "Microsoft.WindowsDesktop.App.Runtime.win-x64",
               "version": "[8.0.34, 8.0.34]"
             }
           ],
@@ -123,11 +105,6 @@
             }
           },
           "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\11.0.100/PortableRuntimeIdentifierGraph.json"
-        }
-      },
-      "runtimes": {
-        "win-x64": {
-          "#import": []
         }
       }
     }

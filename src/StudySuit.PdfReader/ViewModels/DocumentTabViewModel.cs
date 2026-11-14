@@ -1292,6 +1292,42 @@ public sealed partial class DocumentTabViewModel : ObservableObject, IDisposable
                Clip(dy, maxY - p1.Y);
     }
 
+    public PdfAnnotation AddUnderlineStrokeAnnotation(int pageNumber, IReadOnlyList<NormalizedPoint> displayPoints)
+    {
+        var unrotatedPoints = displayPoints.Select(p => p.Unrotate(RotationDegrees)).ToList();
+        var annotation = new PdfAnnotation
+        {
+            PageNumber = pageNumber,
+            Type = AnnotationType.Underline,
+            ColorHex = SelectedColorHex,
+            StrokeThickness = Math.Max(2.0, SelectedStrokeWidth),
+            Points = unrotatedPoints
+        };
+
+        PushUndoSnapshot();
+        Annotations.Add(annotation);
+        CommitAnnotationChange($"Drew underline on page {pageNumber}");
+        return annotation;
+    }
+
+    public PdfAnnotation AddStrikethroughStrokeAnnotation(int pageNumber, IReadOnlyList<NormalizedPoint> displayPoints)
+    {
+        var unrotatedPoints = displayPoints.Select(p => p.Unrotate(RotationDegrees)).ToList();
+        var annotation = new PdfAnnotation
+        {
+            PageNumber = pageNumber,
+            Type = AnnotationType.Strikethrough,
+            ColorHex = SelectedColorHex,
+            StrokeThickness = Math.Max(2.0, SelectedStrokeWidth),
+            Points = unrotatedPoints
+        };
+
+        PushUndoSnapshot();
+        Annotations.Add(annotation);
+        CommitAnnotationChange($"Drew strikethrough on page {pageNumber}");
+        return annotation;
+    }
+
     public PdfAnnotation AddBrushAnnotation(int pageNumber, IReadOnlyList<NormalizedPoint> displayPoints)
     {
         var unrotatedPoints = displayPoints.Select(p => p.Unrotate(RotationDegrees)).ToList();
