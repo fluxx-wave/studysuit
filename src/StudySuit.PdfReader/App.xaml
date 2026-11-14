@@ -1,0 +1,27 @@
+<Application x:Class="StudySuit.PdfReader.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:conv="clr-namespace:StudySuit.PdfReader.Converters">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ui:ThemesDictionary Theme="Dark" />
+                <ui:ControlsDictionary />
+            </ResourceDictionary.MergedDictionaries>
+
+            <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
+            <conv:BoolToVisibilityConverter x:Key="InverseBoolToVis" Invert="True" />
+            <conv:NullToVisibilityConverter x:Key="NullToVis" />
+            <conv:NullToVisibilityConverter x:Key="InverseNullToVis" Invert="True" />
+            <conv:HighlightFillConverter x:Key="HighlightFill" />
+            <conv:HighlightBorderConverter x:Key="HighlightBorder" />
+            <conv:ThemeIconConverter x:Key="ThemeIcon" />
+            <conv:FullScreenIconConverter x:Key="FullScreenIcon" />
+            <conv:HexToBrushConverter x:Key="HexToBrush" />
+            <conv:EnumEqualConverter x:Key="EnumEqual" />
+            <conv:StringEqualMultiConverter x:Key="StringEqualMulti" />
+            <conv:PinIconConverter x:Key="PinIcon" />
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

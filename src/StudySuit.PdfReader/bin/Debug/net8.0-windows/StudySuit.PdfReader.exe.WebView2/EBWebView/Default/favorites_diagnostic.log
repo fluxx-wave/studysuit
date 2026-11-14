@@ -1,0 +1,9 @@
+2026-11-13 04:00:22.894: [INFO] CurrentProfilePath: D:\studysuit\src\StudySuit.PdfReader\bin\Debug\net8.0-windows\StudySuit.PdfReader.exe.WebView2\EBWebView\Default
+2026-11-13 04:00:22.894: [INFO] Profiles total count: 1
+2026-11-13 04:00:22.894: [INFO] Profile: name=Profile 1 path=D:\studysuit\src\StudySuit.PdfReader\bin\Debug\net8.0-windows\StudySuit.PdfReader.exe.WebView2\EBWebView\Default lastActive=null
+2026-11-13 04:00:22.894: [INFO] LastUsedProfileDir: D:\studysuit\src\StudySuit.PdfReader\bin\Debug\net8.0-windows\StudySuit.PdfReader.exe.WebView2\EBWebView\Default
+2026-11-13 04:00:22.894: [INFO] OnDoneLoading sync enabled: 0
+2026-11-13 04:00:22.894: [INFO] BookmarkModelLoaded, ids_reassigned: 0
+2026-11-13 04:00:22.894: [INFO] BookmarksLoadDropped droppedNodes=0
+2026-11-13 04:00:22.894: [INFO] BookmarksSnapshot Startup total=0 bar=0 other=0 mobile=0 showBar=0 showBarNTP=1
+2026-11-13 04:00:32.425: [INFO] BookmarksSnapshot Shutdown total=0 bar=0 other=0 mobile=0 showBar=0 showBarNTP=1
