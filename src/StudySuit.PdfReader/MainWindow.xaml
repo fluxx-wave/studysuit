@@ -1982,20 +1982,18 @@
                              HorizontalContentAlignment="Center"
                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
                              ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             ScrollViewer.CanContentScroll="True"
+                             ScrollViewer.CanContentScroll="False"
                              ScrollViewer.PanningMode="Both"
                              ScrollViewer.PanningDeceleration="0.001"
                              ScrollViewer.PanningRatio="1.0"
                              IsManipulationEnabled="True"
-                             VirtualizingPanel.IsVirtualizing="True"
-                             VirtualizingPanel.VirtualizationMode="Recycling"
-                             VirtualizingPanel.CacheLength="2"
-                             VirtualizingPanel.CacheLengthUnit="Page"
-                             VirtualizingPanel.ScrollUnit="Pixel"
                              Stylus.IsPressAndHoldEnabled="False"
                              Stylus.IsFlicksEnabled="False"
                              Loaded="PdfPageList_Loaded"
-                             PreviewMouseWheel="PdfPageList_PreviewMouseWheel">
+                             PreviewMouseWheel="PdfPageList_PreviewMouseWheel"
+                             ManipulationStarting="PdfPageList_ManipulationStarting"
+                             ManipulationDelta="PdfPageList_ManipulationDelta"
+                             ManipulationInertiaStarting="PdfPageList_ManipulationInertiaStarting">
                         <ListBox.Style>
                             <Style TargetType="ListBox">
                                 <Setter Property="ScrollViewer.PanningMode" Value="Both" />

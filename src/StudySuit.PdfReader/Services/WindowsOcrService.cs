@@ -112,6 +112,84 @@ public sealed class WindowsOcrService : IOcrService
         }
     }
 
+    public async Task<IReadOnlyList<OcrWordBox>> RecognizeWordsAsync(byte[] imageBytes, CancellationToken cancellationToken = default)
+    {
+        EnsureEngine();
+        if (_engine is null || imageBytes.Length == 0)
+        {
+            return [];
+        }
+
+        try
+        {
+            using var randomAccessStream = new InMemoryRandomAccessStream();
+            using (var writer = new DataWriter(randomAccessStream.GetOutputStreamAt(0)))
+            {
+                writer.WriteBytes(imageBytes);
+                await writer.StoreAsync();
+                await writer.FlushAsync();
+            }
+
+            randomAccessStream.Seek(0);
+            var decoder = await Windows.Graphics.Imaging.BitmapDecoder.CreateAsync(randomAccessStream);
+            using var softwareBitmap = await decoder.GetSoftwareBitmapAsync();
+
+            var result = await _engine.RecognizeAsync(softwareBitmap);
+            if (result is null || result.Lines.Count == 0)
+            {
+                return [];
+            }
+
+            var words = new List<OcrWordBox>();
+            foreach (var line in result.Lines)
+            {
+                foreach (var word in line.Words)
+                {
+                    string text = word.Text?.Trim() ?? string.Empty;
+                    if (!string.IsNullOrEmpty(text))
+                    {
+                        words.Add(new OcrWordBox(
+                            text,
+                            word.BoundingRect.X,
+                            word.BoundingRect.Y,
+                            word.BoundingRect.Width,
+                            word.BoundingRect.Height));
+                    }
+                }
+            }
+
+            return words;
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    public async Task<IReadOnlyList<OcrWordBox>> RecognizeWordsFromBitmapAsync(BitmapSource bitmap, CancellationToken cancellationToken = default)
+    {
+        EnsureEngine();
+        if (_engine is null || bitmap is null)
+        {
+            return [];
+        }
+
+        try
+        {
+            var encoder = new PngBitmapEncoder();
+            encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+            using var ms = new MemoryStream();
+            encoder.Save(ms);
+            byte[] bytes = ms.ToArray();
+
+            return await RecognizeWordsAsync(bytes, cancellationToken);
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
     public async Task<string> RecognizeTextFromBitmapAsync(BitmapSource bitmap, CancellationToken cancellationToken = default)
     {
         EnsureEngine();

@@ -665,7 +665,65 @@ public sealed partial class DocumentTabViewModel : ObservableObject, IDisposable
                 maskedBmp.Render(dv);
                 maskedBmp.Freeze();
 
-                return await ocrService.RecognizeTextFromBitmapAsync(maskedBmp);
+                var recognizedWords = await ocrService.RecognizeWordsFromBitmapAsync(maskedBmp);
+                if (recognizedWords.Count == 0)
+                {
+                    return await ocrService.RecognizeTextFromBitmapAsync(maskedBmp);
+                }
+
+                // Strictly filter every word against the user-drawn circle/polygon:
+                // Map the word's bounding box back to normalized page coordinates [0, 1]
+                var validWords = new List<(string Text, double X, double Y)>();
+                foreach (var w in recognizedWords)
+                {
+                    double wordNormX = (px + w.X) / pw;
+                    double wordNormY = (py + w.Y) / ph;
+                    double wordNormW = w.Width / pw;
+                    double wordNormH = w.Height / ph;
+
+                    var center = new NormalizedPoint(wordNormX + wordNormW * 0.5, wordNormY + wordNormH * 0.5);
+                    var leftPt = new NormalizedPoint(wordNormX + wordNormW * 0.2, wordNormY + wordNormH * 0.5);
+                    var rightPt = new NormalizedPoint(wordNormX + wordNormW * 0.8, wordNormY + wordNormH * 0.5);
+
+                    bool isInside = IsPointInPolygon(center, normPolygon) ||
+                                    (IsPointInPolygon(leftPt, normPolygon) && IsPointInPolygon(rightPt, normPolygon));
+
+                    if (isInside)
+                    {
+                        validWords.Add((w.Text, wordNormX, wordNormY));
+                    }
+                }
+
+                if (validWords.Count == 0)
+                {
+                    return string.Empty;
+                }
+
+                // Sort words in reading order (top to bottom, left to right):
+                var sorted = validWords
+                    .OrderBy(w => w.Y)
+                    .ThenBy(w => w.X)
+                    .ToList();
+
+                var lines = new List<List<(string Text, double X, double Y)>>();
+                foreach (var word in sorted)
+                {
+                    var existingLine = lines.FirstOrDefault(line => Math.Abs(line[0].Y - word.Y) <= 0.012);
+                    if (existingLine is not null)
+                    {
+                        existingLine.Add(word);
+                    }
+                    else
+                    {
+                        lines.Add([word]);
+                    }
+                }
+
+                var sortedLines = lines
+                    .OrderBy(line => line.Average(w => w.Y))
+                    .Select(line => string.Join(" ", line.OrderBy(w => w.X).Select(w => w.Text)));
+
+                return string.Join(" ", sortedLines);
             }
             else
             {

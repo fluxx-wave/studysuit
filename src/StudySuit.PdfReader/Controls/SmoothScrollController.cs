@@ -28,6 +28,8 @@ public sealed class SmoothScrollController : IDisposable
         _scrollViewer.PreviewMouseDown += OnScrollViewerPreviewMouseDown;
         _scrollViewer.PreviewTouchDown += OnScrollViewerPreviewTouchDown;
         _scrollViewer.ManipulationStarting += OnScrollViewerManipulationStarting;
+        _scrollViewer.ManipulationDelta += OnScrollViewerManipulationDelta;
+        _scrollViewer.ScrollChanged += OnScrollViewerScrollChanged;
     }
 
     private void OnScrollViewerPreviewMouseDown(object sender, MouseButtonEventArgs e)
@@ -45,6 +47,20 @@ public sealed class SmoothScrollController : IDisposable
         SyncAndStop();
     }
 
+    private void OnScrollViewerManipulationDelta(object? sender, ManipulationDeltaEventArgs e)
+    {
+        SyncAndStop();
+    }
+
+    private void OnScrollViewerScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        if (!_isAnimating)
+        {
+            _targetVertical = _scrollViewer.VerticalOffset;
+            _targetHorizontal = _scrollViewer.HorizontalOffset;
+        }
+    }
+
     public void HandleMouseWheel(MouseWheelEventArgs e, bool horizontal = false, double wheelMultiplier = 0.95)
     {
         if (_disposed || e.Delta == 0)
@@ -55,7 +71,7 @@ public sealed class SmoothScrollController : IDisposable
         if (horizontal)
         {
             double scrollableW = _scrollViewer.ScrollableWidth;
-            if (scrollableW <= 0 && _scrollViewer.ExtentWidth > _scrollViewer.ViewportWidth)
+            if (scrollableW <= 0)
             {
                 _scrollViewer.UpdateLayout();
                 scrollableW = _scrollViewer.ScrollableWidth;
@@ -80,8 +96,7 @@ public sealed class SmoothScrollController : IDisposable
         else
         {
             double scrollableH = _scrollViewer.ScrollableHeight;
-            // On fresh document load, query layout if height hasn't settled yet
-            if (scrollableH <= 0 && _scrollViewer.ExtentHeight > _scrollViewer.ViewportHeight)
+            if (scrollableH <= 0)
             {
                 _scrollViewer.UpdateLayout();
                 scrollableH = _scrollViewer.ScrollableHeight;
@@ -196,5 +211,7 @@ public sealed class SmoothScrollController : IDisposable
         _scrollViewer.PreviewMouseDown -= OnScrollViewerPreviewMouseDown;
         _scrollViewer.PreviewTouchDown -= OnScrollViewerPreviewTouchDown;
         _scrollViewer.ManipulationStarting -= OnScrollViewerManipulationStarting;
+        _scrollViewer.ManipulationDelta -= OnScrollViewerManipulationDelta;
+        _scrollViewer.ScrollChanged -= OnScrollViewerScrollChanged;
     }
 }

@@ -2624,5 +2624,99 @@ public sealed class PdfReaderTests : IDisposable
         File.WriteAllBytes(path, bytes);
         return path;
     }
+
+    [Fact]
+    public async Task ExtractTextWithOcr_NcErtPage16_Question20_PolygonTests()
+    {
+        string ncertPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "StudySuit.PdfReader", "library", "ncert", "jesc1", "jesc101.pdf");
+
+        if (!File.Exists(ncertPath)) return;
+
+        var docInfo = new PdfDocumentInfo
+        {
+            FileName = "jesc101.pdf",
+            FilePath = ncertPath,
+            PageCount = 16,
+            PageSizes = [new PdfPageSize(612, 820.8)]
+        };
+        var tabVm = new DocumentTabViewModel(docInfo, _pdfService);
+
+        // Polygon strictly circling question 20:
+        // Question 19 is at Y=0.360.
+        // Question 20 is from Y=0.375 to Y=0.425.
+        var polygon = new List<NormalizedPoint>
+        {
+            new(0.08, 0.368),
+            new(0.85, 0.368),
+            new(0.85, 0.430),
+            new(0.08, 0.430)
+        };
+        var normRect = new NormalizedRect(0.08, 0.368, 0.77, 0.062);
+
+        var ocr = new WindowsOcrService();
+        if (!ocr.IsSupported) return;
+
+        var rendered = await _pdfService.RenderPageAsync(ncertPath, 16, 144, 0);
+        string text = await tabVm.ExtractTextWithOcrAsync(16, normRect, ocr, rendered, polygon);
+
+        var words = await _pdfService.GetPageWordsAsync(ncertPath, 16);
+        var q12Words = words.Where(w => w.Bounds.Y >= 0.11 && w.Bounds.Y <= 0.16).ToList();
+        var q12Line = string.Join(" ", q12Words.Select(w => $"{w.Text}[Y={w.Bounds.Y:F3}]"));
+
+        string scratchDir = @"C:\Users\SURYA\.gemini\antigravity\brain\d218edce-7961-4978-918b-55ddf267c5d1\scratch";
+        Directory.CreateDirectory(scratchDir);
+        File.WriteAllText(Path.Combine(scratchDir, "ocr_output.txt"), text);
+        File.WriteAllText(Path.Combine(scratchDir, "q12_words.txt"), q12Line);
+
+        Assert.NotEmpty(text);
+        Assert.DoesNotContain("nitrogen", text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("flushed", text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("food items", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Corrosion", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ExtractTextInPolygon_TwoLineQuestion12_ExtractsBothLinesCompletely()
+    {
+        string ncertPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "StudySuit.PdfReader", "library", "ncert", "jesc1", "jesc101.pdf");
+
+        if (!File.Exists(ncertPath)) return;
+
+        var docInfo = new PdfDocumentInfo
+        {
+            FileName = "jesc101.pdf",
+            FilePath = ncertPath,
+            PageCount = 16,
+            PageSizes = [new PdfPageSize(612, 820.8)]
+        };
+        var tabVm = new DocumentTabViewModel(docInfo, _pdfService);
+
+        // Polygon enclosing Question 12 (Y is approx 0.118 to 0.150):
+        // Elliptical circle surrounding Question 12
+        var poly = new List<NormalizedPoint>
+        {
+            new(0.10, 0.115),
+            new(0.50, 0.113),
+            new(0.88, 0.115),
+            new(0.90, 0.133),
+            new(0.88, 0.152),
+            new(0.50, 0.155),
+            new(0.10, 0.152),
+            new(0.08, 0.133),
+            new(0.10, 0.115)
+        };
+
+        var (extracted, rects) = await tabVm.ExtractTextInPolygonWithRectsAsync(16, poly);
+
+        Assert.Contains("Write one equation each for decomposition", extracted);
+        Assert.Contains("form of heat, light or electricity", extracted);
+        // Ensure Question 13 below is NOT included
+        Assert.DoesNotContain("displacement", extracted);
+    }
 }
+
 

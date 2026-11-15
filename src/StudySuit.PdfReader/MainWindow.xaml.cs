@@ -335,6 +335,91 @@ public partial class MainWindow : FluentWindow
         EnsurePageScrollViewer();
     }
 
+    private void AbortActivePointerInteraction()
+    {
+        if (_isPointerDragging)
+        {
+            _isPointerDragging = false;
+            if (_activeSurface is not null)
+            {
+                HideAllPreviewShapes(_activeSurface);
+                _activeSurface.ReleaseAllTouchCaptures();
+                _activeSurface.ReleaseMouseCapture();
+                _activeSurface.ReleaseStylusCapture();
+            }
+            _activeSurface = null;
+            _activeSurfacePage?.ClearLiveWordSelection();
+            _activeSurfacePage = null;
+            _inkCapturePoints.Clear();
+            _paintedWordIndices.Clear();
+        }
+    }
+
+    private void PdfPageList_ManipulationStarting(object sender, ManipulationStartingEventArgs e)
+    {
+        EnsurePageScrollViewer();
+        e.ManipulationContainer = _pageScrollViewer ?? (IInputElement)sender;
+        e.Mode = ManipulationModes.Scale | ManipulationModes.Translate;
+        e.Handled = true;
+    }
+
+    private void PdfPageList_ManipulationDelta(object sender, ManipulationDeltaEventArgs e)
+    {
+        if (_wiredTab is null) return;
+
+        EnsurePageScrollViewer();
+
+        // If more than 1 finger is active and an annotation tool was dragging, abort the single-finger stroke
+        if (_isPointerDragging && (e.Manipulators.Count() >= 2 || Math.Abs(e.DeltaManipulation.Scale.Length - Math.Sqrt(2)) > 0.01))
+        {
+            AbortActivePointerInteraction();
+        }
+
+        // 1. Pinch-to-zoom (Scaling):
+        double scaleFactor = (e.DeltaManipulation.Scale.X + e.DeltaManipulation.Scale.Y) / 2.0;
+        if (Math.Abs(scaleFactor - 1.0) > 0.002)
+        {
+            double currentZoom = _wiredTab.ZoomPercent;
+            double newZoom = Math.Clamp(currentZoom * scaleFactor, 25.0, 500.0);
+
+            if (Math.Abs(newZoom - currentZoom) >= 0.25)
+            {
+                Point originInViewer = e.ManipulationOrigin;
+                double oldHOffset = _pageScrollViewer?.HorizontalOffset ?? 0;
+                double oldVOffset = _pageScrollViewer?.VerticalOffset ?? 0;
+
+                _wiredTab.SetCustomZoom(newZoom);
+
+                if (_pageScrollViewer is not null)
+                {
+                    double zoomRatio = newZoom / currentZoom;
+                    double newHOffset = (oldHOffset + originInViewer.X) * zoomRatio - originInViewer.X;
+                    double newVOffset = (oldVOffset + originInViewer.Y) * zoomRatio - originInViewer.Y;
+
+                    _pageScrollViewer.ScrollToHorizontalOffset(Math.Max(0, newHOffset));
+                    _pageScrollViewer.ScrollToVerticalOffset(Math.Max(0, newVOffset));
+                }
+            }
+            e.Handled = true;
+            return;
+        }
+
+        // 2. Touch Pan (Translation):
+        if (_pageScrollViewer is not null && (Math.Abs(e.DeltaManipulation.Translation.X) > 0.5 || Math.Abs(e.DeltaManipulation.Translation.Y) > 0.5))
+        {
+            _pageScrollViewer.ScrollToHorizontalOffset(_pageScrollViewer.HorizontalOffset - e.DeltaManipulation.Translation.X);
+            _pageScrollViewer.ScrollToVerticalOffset(_pageScrollViewer.VerticalOffset - e.DeltaManipulation.Translation.Y);
+            e.Handled = true;
+        }
+    }
+
+    private void PdfPageList_ManipulationInertiaStarting(object sender, ManipulationInertiaStartingEventArgs e)
+    {
+        e.TranslationBehavior.DesiredDeceleration = 0.002;
+        e.ExpansionBehavior.DesiredDeceleration = 0.001;
+        e.Handled = true;
+    }
+
     private void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         EnsurePageScrollViewer();
@@ -637,7 +722,14 @@ public partial class MainWindow : FluentWindow
             _wiredTab.ScrollToPageRequested += OnScrollToPageRequested;
             _wiredTab.PropertyChanged += Tab_PropertyChanged;
             UpdateViewportMetrics();
-            OnScrollToPageRequested(_wiredTab.CurrentPageNumber);
+            if (_wiredTab.CurrentPageNumber > 1)
+            {
+                OnScrollToPageRequested(_wiredTab.CurrentPageNumber);
+            }
+            else
+            {
+                _pageScrollViewer?.ScrollToTop();
+            }
         }
     }
 
@@ -685,6 +777,21 @@ public partial class MainWindow : FluentWindow
 
         var pageVm = _wiredTab.Pages[pageNumber - 1];
         _pdfSmoothScroller?.SyncAndStop();
+
+        if (pageNumber == 1 && _pageScrollViewer is not null)
+        {
+            _isProgrammaticScroll = true;
+            try
+            {
+                _pageScrollViewer.ScrollToTop();
+            }
+            finally
+            {
+                _isProgrammaticScroll = false;
+            }
+            return;
+        }
+
         _isProgrammaticScroll = true;
         Dispatcher.BeginInvoke(() =>
         {
@@ -1238,6 +1345,14 @@ public partial class MainWindow : FluentWindow
             return;
         }
 
+        // Multi-touch detection: if another touch is already active, this is pinch-to-zoom/pan gesture.
+        // Abort single-finger drawing stroke so the multi-touch manipulation takes over smoothly.
+        if (_isPointerDragging || surface.TouchesCaptured.Count() > 0 || surface.TouchesOver.Count() > 1)
+        {
+            AbortActivePointerInteraction();
+            return;
+        }
+
         Point pos = e.GetTouchPoint(surface).Position;
         if (StartPointerInteraction(surface, pageVm, pos))
         {
@@ -1687,6 +1802,15 @@ public partial class MainWindow : FluentWindow
                     .Select(p => new NormalizedPoint(Math.Clamp(p.X / surfaceW, 0, 1), Math.Clamp(p.Y / surfaceH, 0, 1)))
                     .ToList();
 
+                var pStart = normPoints[0];
+                var pEnd = normPoints[^1];
+                double dx = pEnd.X - pStart.X;
+                double dy = pEnd.Y - pStart.Y;
+                if (Math.Sqrt(dx * dx + dy * dy) > 0.001)
+                {
+                    normPoints.Add(new NormalizedPoint(pStart.X, pStart.Y));
+                }
+
                 double minX = normPoints.Min(p => p.X);
                 double maxX = normPoints.Max(p => p.X);
                 double minY = normPoints.Min(p => p.Y);
@@ -1868,24 +1992,27 @@ public partial class MainWindow : FluentWindow
         _circleSelectionText = extractedText;
 
         bool usedOcr = false;
-        string ocrText = string.Empty;
-        if (_ocrService.IsSupported)
+        // 1. Vector text is extracted with exact word boundaries and native PDF character precision.
+        // 2. Only fall back to OCR if vector extraction found no words (e.g. Scanned book, raster diagram, image-only document)
+        //    or if vector text was minimal (< 2 words) while OCR detected meaningful text inside the polygon.
+        if (string.IsNullOrWhiteSpace(_circleSelectionText) || matchedRects.Count < 2)
         {
-            ocrText = await _wiredTab.ExtractTextWithOcrAsync(
-                pageVm.PageNumber,
-                normRect,
-                _ocrService,
-                pageVm.RenderedImage,
-                normPolygon);
-
-            if (!string.IsNullOrWhiteSpace(ocrText))
+            if (_ocrService.IsSupported)
             {
-                usedOcr = true;
-                if (string.IsNullOrWhiteSpace(_circleSelectionText) ||
-                    ocrText.Length > _circleSelectionText.Length ||
-                    (ocrText.Contains('\n') && !_circleSelectionText.Contains('\n')))
+                string ocrText = await _wiredTab.ExtractTextWithOcrAsync(
+                    pageVm.PageNumber,
+                    normRect,
+                    _ocrService,
+                    pageVm.RenderedImage,
+                    normPolygon);
+
+                if (!string.IsNullOrWhiteSpace(ocrText))
                 {
-                    _circleSelectionText = ocrText.Trim();
+                    if (string.IsNullOrWhiteSpace(_circleSelectionText) || ocrText.Length > _circleSelectionText.Length)
+                    {
+                        _circleSelectionText = ocrText.Trim();
+                        usedOcr = true;
+                    }
                 }
             }
         }
