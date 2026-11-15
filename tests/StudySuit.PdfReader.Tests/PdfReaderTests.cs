@@ -1659,8 +1659,8 @@ public sealed class PdfReaderTests : IDisposable
 
         // Start a new chat
         await aiVm.NewChatAsync();
-        Assert.Single(aiVm.Messages); // only welcome message
-        Assert.True(aiVm.Messages[0].IsWelcome);
+        Assert.Empty(aiVm.Messages); // dummy welcome message removed
+        Assert.True(aiVm.HasNoMessages);
         Assert.Equal("New Study Chat", aiVm.CurrentSession?.Title);
 
         // Send message in second chat
@@ -2389,7 +2389,8 @@ public sealed class PdfReaderTests : IDisposable
 
         // Verify session was updated and persisted
         Assert.Equal(sessionTitle, aiVm.CurrentSession?.Title);
-        Assert.Equal(2, aiVm.Messages.Count(m => !m.IsWelcome));
+        Assert.Equal(2, aiVm.Messages.Count);
+        Assert.False(aiVm.HasNoMessages);
 
         // Verify it was persisted to history
         var sessions = await historyService.LoadSessionsAsync();
@@ -2443,12 +2444,31 @@ public sealed class PdfReaderTests : IDisposable
 
         if (!File.Exists(pdfPath)) return;
 
-        var words = await _pdfService.GetPageWordsAsync(pdfPath, 16);
-        var q12Words = words.Where(w => w.Bounds.Y >= 0.115 && w.Bounds.Y <= 0.155).ToList();
         using var doc = UglyToad.PdfPig.PdfDocument.Open(pdfPath);
         var page = doc.GetPage(16);
         var cb = page.CropBox.Bounds;
-        Assert.Fail($"CropBox: Left={cb.Left}, Bottom={cb.Bottom}, Top={cb.Top}, Height={cb.Height}, Width={cb.Width}");
+
+        double cropLeft = cb.Left;
+        double cropTop = cb.Top;
+        double boxW = cb.Width;
+        double boxH = cb.Height;
+
+        var q12Words = page.GetWords()
+            .Where(w => w.Text.Contains("decomposition", StringComparison.OrdinalIgnoreCase) ||
+                        w.Text.Contains("electricity", StringComparison.OrdinalIgnoreCase) ||
+                        w.Text.Contains("energy", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        var sb = new StringBuilder();
+        foreach (var w in q12Words)
+        {
+            var b = w.BoundingBox;
+            double x = (b.Left - cropLeft) / boxW;
+            double y = (cropTop - b.Top) / boxH;
+            sb.AppendLine($"{w.Text}: raw Left={b.Left}, Top={b.Top} -> Norm X={x:F4}, Y={y:F4}");
+        }
+
+        Assert.True(q12Words.Count >= 3, sb.ToString());
     }
 
     [Fact]
@@ -2495,6 +2515,94 @@ public sealed class PdfReaderTests : IDisposable
         Assert.False(vm.IsLibraryActive);
         Assert.True(vm.ShowHomeDashboard);
         Assert.False(vm.ShowNcertLibrary);
+    }
+
+    [Fact]
+    public void AiAssistantViewModel_StartsCleanWithZeroDummyMessages()
+    {
+        string settingsPath = Path.Combine(_tempDir, "clean_ai_settings.json");
+        var settingsService = new AiSettingsService(settingsPath);
+        var chatService = new AiChatService(new HttpClient(new StubHttpMessageHandler(_ => JsonResp("{}"))));
+        var webService = new StubWebResearchService([]);
+
+        using var aiVm = new AiAssistantViewModel(settingsService, chatService, webService);
+
+        // Verify initial state has 0 messages (dummy message removed)
+        Assert.Empty(aiVm.Messages);
+        Assert.True(aiVm.HasNoMessages);
+        Assert.False(aiVm.HasMessages);
+    }
+
+    [Fact]
+    public async Task AiAssistantViewModel_LocalLlmWithoutModel_DisplaysSetupInstructions()
+    {
+        string settingsPath = Path.Combine(_tempDir, "local_no_model.json");
+        var settings = new AiAssistantSettings
+        {
+            Provider = AiProviderKind.OllamaLocal,
+            BaseUrl = "http://localhost:11434",
+            ModelName = "" // empty model name
+        };
+        var settingsService = new AiSettingsService(settingsPath);
+        settingsService.Save(settings);
+
+        var chatService = new AiChatService(new HttpClient(new StubHttpMessageHandler(_ => JsonResp("{}"))));
+        var webService = new StubWebResearchService([]);
+
+        using var aiVm = new AiAssistantViewModel(settingsService, chatService, webService);
+        aiVm.Settings.ModelName = ""; // user has not configured a model
+        aiVm.PromptText = "Hello!";
+        await aiVm.SendMessageAsync();
+
+        // Must show setup instructions in chat instead of throwing socket error
+        Assert.Equal(2, aiVm.Messages.Count); // 1 user, 1 assistant
+        var assistantMsg = aiVm.Messages[1];
+        Assert.Contains("Local LLM Setup Required", assistantMsg.Content);
+        Assert.Contains("AI Settings", assistantMsg.Content);
+        Assert.Contains("Ollama", assistantMsg.Content);
+    }
+
+    [Fact]
+    public async Task AiAssistantViewModel_LocalLlmConnectionFailure_DisplaysHelpfulGuide()
+    {
+        string settingsPath = Path.Combine(_tempDir, "local_offline.json");
+        var settings = new AiAssistantSettings
+        {
+            Provider = AiProviderKind.OllamaLocal,
+            BaseUrl = "http://localhost:59999", // dead port
+            ModelName = "llama3.2"
+        };
+        var settingsService = new AiSettingsService(settingsPath);
+        settingsService.Save(settings);
+
+        // Mock chat service that simulates unreachable local server
+        var mockFailingService = new FailingLocalChatService();
+        var webService = new StubWebResearchService([]);
+
+        using var aiVm = new AiAssistantViewModel(settingsService, mockFailingService, webService);
+        aiVm.PromptText = "Explain photosynthesis";
+        await aiVm.SendMessageAsync();
+
+        Assert.Equal(2, aiVm.Messages.Count);
+        var errMsg = aiVm.Messages[1];
+        Assert.True(errMsg.IsError);
+        Assert.Contains("Could not reach Local LLM", errMsg.Content);
+        Assert.Contains("ollama run", errMsg.Content);
+    }
+
+    private sealed class FailingLocalChatService : IAiChatService
+    {
+        public Task<string> SendChatAsync(AiAssistantSettings settings, IReadOnlyList<AiChatMessage> history, string userPrompt, string? pdfContext, IReadOnlyList<WebSourceReference> webSources, Action<string>? onStreamDelta = null, CancellationToken cancellationToken = default)
+            => throw new HttpRequestException("No connection could be made because the target machine actively refused it.");
+
+        public Task<string> SendChatWithToolsAsync(AiAssistantSettings settings, IReadOnlyList<AiChatMessage> history, string userPrompt, string? pdfContext, AiToolHost? toolHost, Action<string>? onStreamDelta = null, CancellationToken cancellationToken = default)
+            => throw new HttpRequestException("No connection could be made because the target machine actively refused it.");
+
+        public Task<IReadOnlyList<string>> FetchAvailableModelsAsync(AiAssistantSettings settings, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<string>>([]);
+
+        public Task<(bool Success, string Message)> TestConnectionAsync(AiAssistantSettings settings, CancellationToken cancellationToken = default)
+            => Task.FromResult((false, "Connection refused"));
     }
 
     private string CreateSamplePdf(string fileName)

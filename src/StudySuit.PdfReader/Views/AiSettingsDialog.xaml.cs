@@ -15,7 +15,6 @@ public partial class AiSettingsDialog : FluentWindow
     private readonly ILlamaCppAutoSetupService _llamaService;
     private bool _isInitializing = true;
     private bool _isPreviewSpeaking;
-    private CancellationTokenSource? _autoSetupCts;
 
     public AiAssistantSettings UpdatedSettings { get; private set; }
 
@@ -36,7 +35,6 @@ public partial class AiSettingsDialog : FluentWindow
         Closing += (_, _) =>
         {
             _voiceService.Stop();
-            _autoSetupCts?.Cancel();
         };
     }
 
@@ -57,17 +55,6 @@ public partial class AiSettingsDialog : FluentWindow
         ResponseFormatBox.Text = s.ResponseFormatPrompt;
         ResponseFormatBox.IsEnabled = s.IncludeResponseFormatSpec;
         UseInternetCheck.IsChecked = s.UseInternetByDefault;
-
-        // Auto setup & system specs
-        var specs = _llamaService.DetectSystemSpecs();
-        SystemSpecsLabel.Text = specs.SummaryText;
-
-        var packages = _llamaService.GetAvailablePackages();
-        AutoSetupModelBox.ItemsSource = packages;
-        var recommended = _llamaService.GetRecommendedPackage(specs);
-        AutoSetupModelBox.SelectedItem = recommended;
-        AutoSetupModelNote.Text = recommended.Description;
-        UpdateLlamaServerButton();
 
         // Voice Model, Speed & Pitch
         var voiceList = new List<string>(AiPersonalisationDefaults.StandardVoiceModels);
@@ -258,122 +245,34 @@ public partial class AiSettingsDialog : FluentWindow
         }
     }
 
-    private void AutoSetupModelBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void PresetOllamaButton_Click(object sender, RoutedEventArgs e)
     {
-        if (AutoSetupModelBox.SelectedItem is LlamaModelPackage pkg)
-        {
-            AutoSetupModelNote.Text = $"{pkg.Description} ({pkg.RamRecommendation})";
-        }
+        var preset = AiProviderDefaults.Presets.FirstOrDefault(p => p.Kind == AiProviderKind.OllamaLocal);
+        if (preset is not null) ProviderBox.SelectedItem = preset;
+        BaseUrlBox.Text = "http://localhost:11434";
+        if (string.IsNullOrWhiteSpace(ModelBox.Text)) ModelBox.Text = "llama3.2";
+        TestStatusText.Foreground = Brushes.Gray;
+        TestStatusText.Text = "Switched to Ollama preset (default port 11434). Click 'Fetch Models' to load installed models.";
     }
 
-    private async void AutoSetupButton_Click(object sender, RoutedEventArgs e)
+    private void PresetLmStudioButton_Click(object sender, RoutedEventArgs e)
     {
-        if (AutoSetupModelBox.SelectedItem is not LlamaModelPackage package)
-        {
-            return;
-        }
-
-        AutoSetupButton.IsEnabled = false;
-        AutoSetupProgressPanel.Visibility = Visibility.Visible;
-        AutoSetupProgressBar.Value = 0;
-        AutoSetupStatusText.Text = "Starting auto-setup...";
-        AutoSetupDetailText.Text = "";
-
-        _autoSetupCts = new CancellationTokenSource();
-        var ct = _autoSetupCts.Token;
-
-        var progress = new Progress<(string Phase, double Percent, string Detail)>(p =>
-        {
-            AutoSetupStatusText.Text = p.Phase;
-            AutoSetupProgressBar.Value = p.Percent;
-            AutoSetupDetailText.Text = p.Detail;
-        });
-
-        try
-        {
-            // Step 1: Install llama.cpp server binaries
-            string serverExe = await _llamaService.SetupLlamaServerAsync(progress, ct);
-
-            // Step 2: Download the selected GGUF model
-            string modelFile = await _llamaService.DownloadModelAsync(package, progress, ct);
-
-            // Step 3: Configure settings to use llama.cpp
-            var llamaPreset = AiProviderDefaults.Presets.FirstOrDefault(p => p.Kind == AiProviderKind.LlamaCppLocal)
-                              ?? AiProviderDefaults.Presets[0];
-            ProviderBox.SelectedItem = llamaPreset;
-            BaseUrlBox.Text = "http://localhost:8080/v1";
-            ModelBox.Text = package.FileName;
-
-            AutoSetupStatusText.Text = "Auto-setup completed successfully!";
-            AutoSetupDetailText.Text = "Ready to start local server";
-            AutoSetupProgressBar.Value = 100;
-
-            // Automatically attempt starting the server
-            bool started = await _llamaService.StartServerAsync(package.FileName, port: 8080, ct);
-            UpdateLlamaServerButton();
-
-            TestStatusText.Foreground = new SolidColorBrush(
-                started ? Color.FromRgb(74, 222, 128) : Color.FromRgb(248, 113, 113));
-            TestStatusText.Text = started
-                ? $"Local AI Server is running at http://localhost:8080/v1 with {package.DisplayName}!"
-                : $"Auto-setup finished. Server notice: {_llamaService.LastServerError ?? "Click 'Start Local Server' to run offline."}";
-        }
-        catch (OperationCanceledException)
-        {
-            AutoSetupStatusText.Text = "Setup cancelled";
-        }
-        catch (Exception ex)
-        {
-            AutoSetupStatusText.Text = $"Setup error: {ex.Message}";
-        }
-        finally
-        {
-            AutoSetupButton.IsEnabled = true;
-        }
+        var preset = AiProviderDefaults.Presets.FirstOrDefault(p => p.Kind == AiProviderKind.LmStudioLocal);
+        if (preset is not null) ProviderBox.SelectedItem = preset;
+        BaseUrlBox.Text = "http://localhost:1234/v1";
+        if (string.IsNullOrWhiteSpace(ModelBox.Text)) ModelBox.Text = "local-model";
+        TestStatusText.Foreground = Brushes.Gray;
+        TestStatusText.Text = "Switched to LM Studio preset (default port 1234). Click 'Fetch Models' to load loaded models.";
     }
 
-    private async void StartLlamaServerButton_Click(object sender, RoutedEventArgs e)
+    private void PresetLlamaCppButton_Click(object sender, RoutedEventArgs e)
     {
-        StartLlamaServerButton.IsEnabled = false;
-        try
-        {
-            if (_llamaService.IsServerRunning())
-            {
-                _llamaService.StopServer();
-                UpdateLlamaServerButton();
-                TestStatusText.Foreground = Brushes.Gray;
-                TestStatusText.Text = "Local llama.cpp server stopped.";
-            }
-            else
-            {
-                string modelName = AutoSetupModelBox.SelectedItem is LlamaModelPackage pkg
-                    ? pkg.FileName
-                    : (string.IsNullOrWhiteSpace(ModelBox.Text) ? "qwen2.5-1.5b-instruct-q4_k_m.gguf" : ModelBox.Text.Trim());
-
-                TestStatusText.Foreground = Brushes.Gray;
-                TestStatusText.Text = $"Starting local server with {modelName}...";
-
-                bool success = await _llamaService.StartServerAsync(modelName);
-                UpdateLlamaServerButton();
-
-                TestStatusText.Foreground = new SolidColorBrush(
-                    success ? Color.FromRgb(74, 222, 128) : Color.FromRgb(248, 113, 113));
-                TestStatusText.Text = success
-                    ? "Local llama.cpp server is running at http://localhost:8080/v1."
-                    : $"Could not start server: {_llamaService.LastServerError ?? "Ensure llama-server.exe and model file are installed."}";
-            }
-        }
-        finally
-        {
-            StartLlamaServerButton.IsEnabled = true;
-        }
-    }
-
-    private void UpdateLlamaServerButton()
-    {
-        bool running = _llamaService.IsServerRunning();
-        LlamaServerStatusLabel.Text = running ? "Stop Server" : "Start Local Server";
-        LlamaServerIcon.Symbol = running ? SymbolRegular.Stop24 : SymbolRegular.Play24;
+        var preset = AiProviderDefaults.Presets.FirstOrDefault(p => p.Kind == AiProviderKind.LlamaCppLocal);
+        if (preset is not null) ProviderBox.SelectedItem = preset;
+        BaseUrlBox.Text = "http://localhost:8080/v1";
+        if (string.IsNullOrWhiteSpace(ModelBox.Text)) ModelBox.Text = "qwen2.5-1.5b-instruct-q4_k_m.gguf";
+        TestStatusText.Foreground = Brushes.Gray;
+        TestStatusText.Text = "Switched to llama.cpp preset (default port 8080).";
     }
 
     private AiAssistantSettings BuildSettingsFromForm()

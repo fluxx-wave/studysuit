@@ -22,6 +22,8 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
     private bool _isSyncingSettings;
 
     public ObservableCollection<AiChatMessage> Messages { get; } = [];
+    public bool HasMessages => Messages.Count > 0;
+    public bool HasNoMessages => Messages.Count == 0;
 
     [ObservableProperty]
     private bool _isHistoryOpen;
@@ -95,7 +97,11 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
         _useWebResearch = _settings.UseInternetByDefault;
         SyncPersonalisationFromSettings();
         CurrentSession = new AiChatSession { Title = "New Study Chat" };
-        AddWelcomeMessage();
+        Messages.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasMessages));
+            OnPropertyChanged(nameof(HasNoMessages));
+        };
         _ = LoadSessionsListAsync();
     }
 
@@ -230,7 +236,6 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
         RunOnUi(() =>
         {
             Messages.Clear();
-            AddWelcomeMessage();
             IsHistoryOpen = false;
             StatusText = "New study chat started";
             MessageAdded?.Invoke();
@@ -250,11 +255,6 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
             foreach (var m in session.Messages)
             {
                 Messages.Add(m);
-            }
-
-            if (Messages.Count == 0)
-            {
-                AddWelcomeMessage();
             }
 
             IsHistoryOpen = false;
@@ -473,7 +473,6 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
         RunOnUi(() =>
         {
             Messages.Clear();
-            AddWelcomeMessage();
             StatusText = $"Circle to Search: {sessionTitle}";
         });
 
@@ -530,34 +529,20 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
 
         try
         {
-            if (Settings.Provider == AiProviderKind.LlamaCppLocal && _llamaService is not null)
+            bool isLocal = Settings.Provider is AiProviderKind.OllamaLocal or AiProviderKind.LmStudioLocal or AiProviderKind.LlamaCppLocal;
+            if (isLocal && string.IsNullOrWhiteSpace(Settings.ModelName))
             {
-                if (!_llamaService.IsServerRunning())
-                {
-                    string? exe = _llamaService.FindInstalledServerExecutable();
-                    string modelName = string.IsNullOrWhiteSpace(Settings.ModelName) ? "qwen2.5-1.5b-instruct-q4_k_m.gguf" : Settings.ModelName;
-                    var models = _llamaService.GetDownloadedModelFiles();
-                    if (exe is not null && models.Contains(modelName))
-                    {
-                        StatusText = $"Starting local llama.cpp server ({modelName})...";
-                        bool started = await _llamaService.StartServerAsync(modelName, ct: ct);
-                        if (!started)
-                        {
-                            streamingMessage.Content = $"⚠️ Could not start local llama.cpp server: {_llamaService.LastServerError ?? "unknown error"}.\n\nPlease open Settings (⚙️) to verify local AI configuration.";
-                            StatusText = "Local server start failed";
-                            IsBusy = false;
-                            return;
-                        }
-                        StatusText = "Local llama.cpp server started!";
-                    }
-                    else
-                    {
-                        streamingMessage.Content = "⚠️ The local llama.cpp AI model is not set up on this device yet.\n\nTo use offline AI, click the **Settings (⚙️)** button at the top of the chat panel, then click **1-Click Auto Setup**. It will automatically install the lightweight model for your laptop.";
-                        StatusText = "Local model not installed";
-                        IsBusy = false;
-                        return;
-                    }
-                }
+                streamingMessage.Content =
+                    "### 🤖 Local LLM Setup Required\n\n" +
+                    "To use local offline AI, please configure your local model name:\n\n" +
+                    "1. Click the **AI Settings (⚙️)** button at the top right of this chat.\n" +
+                    "2. Select your local provider (**Ollama**, **LM Studio**, or **llama.cpp**).\n" +
+                    "3. Click **Fetch Models** to auto-detect installed models, or enter your model name (e.g. `llama3.2`, `mistral`, `deepseek-r1:8b`).\n\n" +
+                    "> Ensure your local AI server (Ollama, LM Studio, or llama.cpp) is running on your machine.";
+                StatusText = "Local model not configured";
+                IsBusy = false;
+                MessageAdded?.Invoke();
+                return;
             }
 
             string? pdfContext = null;
@@ -703,10 +688,30 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             Messages.Remove(streamingMessage);
+            bool isLocal = Settings.Provider is AiProviderKind.OllamaLocal or AiProviderKind.LmStudioLocal or AiProviderKind.LlamaCppLocal;
+            string errContent;
+            if (isLocal)
+            {
+                string configuredModel = string.IsNullOrWhiteSpace(Settings.ModelName) ? "(no model specified)" : Settings.ModelName;
+                errContent =
+                    $"### ⚠️ Could not reach Local LLM ({ActiveProviderLabel})\n\n" +
+                    $"**Endpoint:** `{Settings.BaseUrl}` • **Model:** `{configuredModel}`\n\n" +
+                    $"**Details:** `{ex.Message}`\n\n" +
+                    "**To start your local model:**\n" +
+                    "- **Ollama:** In terminal, run `ollama run <model>` (e.g. `ollama run llama3.2`)\n" +
+                    "- **LM Studio:** Start the Local Server on port `1234`\n" +
+                    "- **llama.cpp:** Run `llama-server.exe -m <model.gguf> --port 8080`\n\n" +
+                    "> Click **AI Settings (⚙️)** above to change provider, endpoint, or switch to Cloud AI.";
+            }
+            else
+            {
+                errContent = $"Could not reach **{ActiveProviderLabel}**.\n\n`{ex.Message}`";
+            }
+
             Messages.Add(new AiChatMessage
             {
                 Role = "assistant",
-                Content = $"Could not reach **{ActiveProviderLabel}**.\n\n`{ex.Message}`",
+                Content = errContent,
                 IsError = true
             });
             MessageAdded?.Invoke();
@@ -736,7 +741,6 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
         RunOnUi(() =>
         {
             Messages.Clear();
-            AddWelcomeMessage();
             StatusText = "Cleared and archived to history";
             MessageAdded?.Invoke();
         });
@@ -768,16 +772,7 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
 
     private void AddWelcomeMessage()
     {
-        Messages.Add(new AiChatMessage
-        {
-            Role = "assistant",
-            IsWelcome = true,
-            Content =
-                "Hi! I'm **StudySuit AI**.\n\n" +
-                "- Ask questions about your open **PDF** (`pdf_search` & `read_pdf_page` tools)\n" +
-                "- Toggle **Web Research** when you want live online citations (`web_search` tool)\n" +
-                "- Supports **Markdown**, tables, code, **LaTeX equations**, **charts/graphs**, and **pictures**"
-        });
+        // Initial dummy welcome message removed per user instruction.
     }
 
     private static void RunOnUi(Action action)

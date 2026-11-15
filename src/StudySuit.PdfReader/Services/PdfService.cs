@@ -411,10 +411,15 @@ public sealed class PdfService : IPdfService
 
     private static List<PdfWordBox> ExtractNormalizedWords(UglyToad.PdfPig.Content.Page page)
     {
-        // PDFium renders the page using (0,0) as user space origin and page.Width x page.Height as dimensions.
-        // Normalizing word boxes with (0,0) origin perfectly aligns with the rendered page bitmap pixels.
-        double boxW = page.Width > 0 ? page.Width : (page.CropBox.Bounds.Width > 0 ? page.CropBox.Bounds.Width : page.MediaBox.Bounds.Width);
-        double boxH = page.Height > 0 ? page.Height : (page.CropBox.Bounds.Height > 0 ? page.CropBox.Bounds.Height : page.MediaBox.Bounds.Height);
+        // PDFium renders the page using the CropBox viewport (or MediaBox if uncropped).
+        // Origin (0,0) in the rendered bitmap corresponds to (CropBox.Left, CropBox.Top).
+        // To align word coordinates precisely with the rendered page bitmap pixels,
+        // subtract CropBox.Left from X and project from CropBox.Top for Y.
+        var cb = page.CropBox.Bounds;
+        double cropLeft = cb.Width > 0 ? cb.Left : 0;
+        double cropTop = cb.Height > 0 ? cb.Top : (page.Height > 0 ? page.Height : page.MediaBox.Bounds.Height);
+        double boxW = cb.Width > 0 ? cb.Width : (page.Width > 0 ? page.Width : page.MediaBox.Bounds.Width);
+        double boxH = cb.Height > 0 ? cb.Height : (page.Height > 0 ? page.Height : page.MediaBox.Bounds.Height);
 
         if (boxW <= 0 || boxH <= 0)
         {
@@ -430,8 +435,8 @@ public sealed class PdfService : IPdfService
             }
 
             var b = word.BoundingBox;
-            double x = Math.Clamp(b.Left / boxW, 0, 1);
-            double y = Math.Clamp(1.0 - b.Top / boxH, 0, 1);
+            double x = Math.Clamp((b.Left - cropLeft) / boxW, 0, 1);
+            double y = Math.Clamp((cropTop - b.Top) / boxH, 0, 1);
             double w = Math.Clamp(b.Width / boxW, 0, 1 - x);
             double h = Math.Clamp(b.Height / boxH, 0, 1 - y);
 

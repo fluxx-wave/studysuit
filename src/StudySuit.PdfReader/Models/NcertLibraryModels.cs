@@ -72,6 +72,28 @@ public sealed partial class NcertBookItem : ObservableObject
         }
     }
 
+    public void UpdateChapters(IEnumerable<NcertChapterItem> newChapters)
+    {
+        lock (_chaptersLock)
+        {
+            Chapters.Clear();
+            foreach (var ch in newChapters)
+            {
+                Chapters.Add(ch);
+            }
+        }
+        OnPropertyChanged(nameof(HasMultipleChapters));
+    }
+
+    public void ClearChapters()
+    {
+        lock (_chaptersLock)
+        {
+            Chapters.Clear();
+        }
+        OnPropertyChanged(nameof(HasMultipleChapters));
+    }
+
     public bool HasMultipleChapters => Chapters.Count > 1;
 
     public string StatusBadgeText => IsDownloading

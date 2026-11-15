@@ -85,7 +85,7 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Auto Setup llama.cpp Local AI Card -->
+                <!-- Local LLM Connection & Presets Card -->
                 <Border Padding="16"
                         CornerRadius="10"
                         BorderThickness="1"
@@ -93,76 +93,54 @@
                         Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                         Margin="0,0,0,16">
                     <StackPanel>
-                        <DockPanel Margin="0,0,0,8">
-                            <ui:Button x:Name="AutoSetupButton"
-                                       DockPanel.Dock="Right"
-                                       Appearance="Primary"
-                                       Padding="14,6"
-                                       Click="AutoSetupButton_Click">
-                                <StackPanel Orientation="Horizontal">
-                                    <ui:SymbolIcon Symbol="Wrench24" FontSize="15" Margin="0,0,6,0" />
-                                    <TextBlock Text="Auto Setup Local AI" FontWeight="SemiBold" />
-                                </StackPanel>
-                            </ui:Button>
-                            <StackPanel>
-                                <StackPanel Orientation="Horizontal">
-                                    <ui:SymbolIcon Symbol="Sparkle24" FontSize="16" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" Margin="0,0,6,0" VerticalAlignment="Center" />
-                                    <TextBlock Text="Auto Setup (llama.cpp Offline AI)" FontSize="13.5" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                </StackPanel>
-                                <TextBlock x:Name="SystemSpecsLabel"
-                                           Text="Detecting system hardware specs..."
-                                           FontSize="11.5"
-                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                           Margin="0,3,0,0" />
-                            </StackPanel>
-                        </DockPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <ui:SymbolIcon Symbol="Laptop24" FontSize="16" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" Margin="0,0,6,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Local LLM Connection &amp; Quick Presets" FontSize="13.5" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        </StackPanel>
 
-                        <TextBlock Text="Automatically downloads portable llama.cpp and a smooth-running local model optimized for your PC's RAM and CPU."
+                        <TextBlock Text="Run your preferred local AI server on your machine, then click a preset below or click 'Fetch Models' above to connect:"
                                    FontSize="11.5"
                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                    TextWrapping="Wrap"
                                    Margin="0,0,0,10" />
 
-                        <Grid Margin="0,0,0,8">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="12" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
+                        <WrapPanel Margin="0,0,0,8">
+                            <ui:Button x:Name="PresetOllamaButton"
+                                       Appearance="Secondary"
+                                       Padding="10,5"
+                                       Margin="0,0,8,6"
+                                       Click="PresetOllamaButton_Click">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Server24" FontSize="13" Margin="0,0,5,0" />
+                                    <TextBlock Text="Ollama (:11434)" FontSize="11.5" />
+                                </StackPanel>
+                            </ui:Button>
+                            <ui:Button x:Name="PresetLmStudioButton"
+                                       Appearance="Secondary"
+                                       Padding="10,5"
+                                       Margin="0,0,8,6"
+                                       Click="PresetLmStudioButton_Click">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Desktop24" FontSize="13" Margin="0,0,5,0" />
+                                    <TextBlock Text="LM Studio (:1234)" FontSize="11.5" />
+                                </StackPanel>
+                            </ui:Button>
+                            <ui:Button x:Name="PresetLlamaCppButton"
+                                       Appearance="Secondary"
+                                       Padding="10,5"
+                                       Margin="0,0,8,6"
+                                       Click="PresetLlamaCppButton_Click">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Code24" FontSize="13" Margin="0,0,5,0" />
+                                    <TextBlock Text="llama.cpp (:8080)" FontSize="11.5" />
+                                </StackPanel>
+                            </ui:Button>
+                        </WrapPanel>
 
-                            <StackPanel Grid.Column="0">
-                                <TextBlock Text="Recommended Model (Matched to your Hardware):" FontSize="11.5" FontWeight="SemiBold" Margin="0,0,0,4" />
-                                <ComboBox x:Name="AutoSetupModelBox"
-                                          DisplayMemberPath="DisplayName"
-                                          SelectionChanged="AutoSetupModelBox_SelectionChanged" />
-                                <TextBlock x:Name="AutoSetupModelNote"
-                                           Text="Ultra-fast &amp; smooth on any PC (zero lag)"
-                                           FontSize="11"
-                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                           Margin="2,3,0,0" />
-                            </StackPanel>
-
-                            <StackPanel Grid.Column="2" VerticalAlignment="Bottom">
-                                <ui:Button x:Name="StartLlamaServerButton"
-                                           Appearance="Secondary"
-                                           Padding="12,6"
-                                           Click="StartLlamaServerButton_Click">
-                                    <StackPanel Orientation="Horizontal">
-                                        <ui:SymbolIcon x:Name="LlamaServerIcon" Symbol="Play24" FontSize="14" Margin="0,0,6,0" />
-                                        <TextBlock x:Name="LlamaServerStatusLabel" Text="Start Local Server" FontSize="12" />
-                                    </StackPanel>
-                                </ui:Button>
-                            </StackPanel>
-                        </Grid>
-
-                        <!-- Progress bar during download/setup -->
-                        <StackPanel x:Name="AutoSetupProgressPanel" Visibility="Collapsed" Margin="0,6,0,0">
-                            <ProgressBar x:Name="AutoSetupProgressBar" Height="8" Margin="0,0,0,6" Minimum="0" Maximum="100" />
-                            <DockPanel>
-                                <TextBlock x:Name="AutoSetupDetailText" DockPanel.Dock="Right" Text="" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                                <TextBlock x:Name="AutoSetupStatusText" Text="Preparing setup..." FontSize="11.5" FontWeight="SemiBold" />
-                            </DockPanel>
-                        </StackPanel>
+                        <TextBlock Text="• Ollama: Run 'ollama run llama3.2' in terminal (default: http://localhost:11434)&#x0a;• LM Studio: Start Local Server in the Developer tab (default: http://localhost:1234/v1)&#x0a;• llama.cpp: Run 'llama-server.exe -m model.gguf --port 8080' (default: http://localhost:8080/v1)"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                   TextWrapping="Wrap" />
                     </StackPanel>
                 </Border>
 

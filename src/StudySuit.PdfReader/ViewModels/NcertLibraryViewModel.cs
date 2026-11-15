@@ -85,6 +85,13 @@ public sealed partial class NcertLibraryViewModel : ObservableObject
 
     public void LoadCatalog()
     {
+        var app = System.Windows.Application.Current;
+        if (app?.Dispatcher is { } dispatcher && !dispatcher.CheckAccess())
+        {
+            dispatcher.Invoke(LoadCatalog);
+            return;
+        }
+
         AllBooks.Clear();
         var books = _libraryService.GetAllBooks();
         foreach (var b in books)
@@ -148,7 +155,6 @@ public sealed partial class NcertLibraryViewModel : ObservableObject
             return;
         }
 
-        FilteredBooks.Clear();
         string q = SearchText?.Trim() ?? string.Empty;
 
         var matching = AllBooks.Where(b =>
@@ -190,9 +196,13 @@ public sealed partial class NcertLibraryViewModel : ObservableObject
             return true;
         }).ToList();
 
-        foreach (var b in matching)
+        lock (_filteredLock)
         {
-            FilteredBooks.Add(b);
+            FilteredBooks.Clear();
+            foreach (var b in matching)
+            {
+                FilteredBooks.Add(b);
+            }
         }
 
         HasNoMatchingBooks = FilteredBooks.Count == 0;
@@ -212,14 +222,39 @@ public sealed partial class NcertLibraryViewModel : ObservableObject
         try
         {
             string primaryPath = await _libraryService.DownloadBookAsync(book);
-            GlobalStatusMessage = $"Successfully downloaded {book.Title}!";
-            ApplyFilter();
+            var app = System.Windows.Application.Current;
+            if (app?.Dispatcher is { } dispatcher && !dispatcher.CheckAccess())
+            {
+                dispatcher.Invoke(() =>
+                {
+                    GlobalStatusMessage = $"Successfully downloaded {book.Title}!";
+                    ApplyFilter();
+                });
+            }
+            else
+            {
+                GlobalStatusMessage = $"Successfully downloaded {book.Title}!";
+                ApplyFilter();
+            }
         }
         catch (Exception ex)
         {
-            book.IsDownloading = false;
-            book.DownloadStatusText = $"Download failed: {ex.Message}";
-            GlobalStatusMessage = $"Failed to download {book.ShortTitle}: {ex.Message}";
+            var app = System.Windows.Application.Current;
+            if (app?.Dispatcher is { } dispatcher && !dispatcher.CheckAccess())
+            {
+                dispatcher.Invoke(() =>
+                {
+                    book.IsDownloading = false;
+                    book.DownloadStatusText = $"Download failed: {ex.Message}";
+                    GlobalStatusMessage = $"Failed to download {book.ShortTitle}: {ex.Message}";
+                });
+            }
+            else
+            {
+                book.IsDownloading = false;
+                book.DownloadStatusText = $"Download failed: {ex.Message}";
+                GlobalStatusMessage = $"Failed to download {book.ShortTitle}: {ex.Message}";
+            }
         }
     }
 

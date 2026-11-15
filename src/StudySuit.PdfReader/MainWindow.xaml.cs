@@ -1881,11 +1881,9 @@ public partial class MainWindow : FluentWindow
             if (!string.IsNullOrWhiteSpace(ocrText))
             {
                 usedOcr = true;
-                if (string.IsNullOrWhiteSpace(_circleSelectionText))
-                {
-                    _circleSelectionText = ocrText.Trim();
-                }
-                else if (ocrText.Length > _circleSelectionText.Length * 1.25)
+                if (string.IsNullOrWhiteSpace(_circleSelectionText) ||
+                    ocrText.Length > _circleSelectionText.Length ||
+                    (ocrText.Contains('\n') && !_circleSelectionText.Contains('\n')))
                 {
                     _circleSelectionText = ocrText.Trim();
                 }

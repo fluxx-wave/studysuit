@@ -110,7 +110,7 @@ public sealed class NcertLibraryService : INcertLibraryService
             {
                 book.IsDownloaded = false;
                 book.PrimaryPdfPath = null;
-                book.Chapters.Clear();
+                book.ClearChapters();
             });
             return;
         }
@@ -125,7 +125,7 @@ public sealed class NcertLibraryService : INcertLibraryService
             {
                 book.IsDownloaded = false;
                 book.PrimaryPdfPath = null;
-                book.Chapters.Clear();
+                book.ClearChapters();
             });
             return;
         }
@@ -166,11 +166,7 @@ public sealed class NcertLibraryService : INcertLibraryService
             book.IsDownloaded = true;
             book.PrimaryPdfPath = primary;
             book.DownloadStatusText = statusText;
-            book.Chapters.Clear();
-            foreach (var ch in chapterList)
-            {
-                book.Chapters.Add(ch);
-            }
+            book.UpdateChapters(chapterList);
         });
     }
 
@@ -335,7 +331,7 @@ public sealed class NcertLibraryService : INcertLibraryService
         {
             book.IsDownloaded = false;
             book.PrimaryPdfPath = null;
-            book.Chapters.Clear();
+            book.ClearChapters();
             book.DownloadStatusText = "Available to Download";
         });
         return Task.CompletedTask;

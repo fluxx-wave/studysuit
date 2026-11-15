@@ -94,7 +94,7 @@ public static partial class MarkdownFlowRenderer
                 {
                     doc.Blocks.Add(BuildCalloutJsonBlock(blockContent, palette, isDarkTheme, onOpenLink));
                 }
-                else if (lang is "math" or "latex")
+                else if (lang is "math" or "latex" or "chem" or "chemistry" or "equation")
                 {
                     doc.Blocks.Add(BuildEquationBlock(blockContent, isDarkTheme));
                 }

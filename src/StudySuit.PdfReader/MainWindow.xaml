@@ -3903,15 +3903,49 @@
                         </WrapPanel>
                     </Border>
 
-                    <!-- Chat Messages Feed -->
-                    <ScrollViewer x:Name="AiChatScrollViewer"
-                                  Grid.Row="2"
-                                  VerticalScrollBarVisibility="Auto"
-                                  HorizontalScrollBarVisibility="Disabled"
-                                  CanContentScroll="False"
-                                  PreviewMouseWheel="AiChatScrollViewer_PreviewMouseWheel"
-                                  MouseWheel="AiChatScrollViewer_PreviewMouseWheel"
-                                  Padding="12,10">
+                    <!-- Row 2: Chat Messages Feed & Watermark Placeholder -->
+                    <Grid Grid.Row="2">
+                        <!-- Clean Empty State Watermark Placeholder (shown when chat has 0 messages) -->
+                        <Border HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Padding="24"
+                                Margin="16"
+                                Visibility="{Binding HasNoMessages, Converter={StaticResource BoolToVis}}">
+                            <StackPanel HorizontalAlignment="Center">
+                                <Border Width="48" Height="48"
+                                        CornerRadius="24"
+                                        Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                                        HorizontalAlignment="Center"
+                                        Margin="0,0,0,12">
+                                    <ui:SymbolIcon Symbol="BotSparkle24"
+                                                   FontSize="24"
+                                                   Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center" />
+                                </Border>
+                                <TextBlock Text="StudySuit AI Assistant"
+                                           FontSize="14.5"
+                                           FontWeight="SemiBold"
+                                           HorizontalAlignment="Center"
+                                           Margin="0,0,0,5" />
+                                <TextBlock Text="Ask questions about your PDF, extract formulas, solve problems, or use Circle to Search."
+                                           FontSize="11.5"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           TextWrapping="Wrap"
+                                           TextAlignment="Center"
+                                           MaxWidth="260"
+                                           HorizontalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Chat Messages Feed -->
+                        <ScrollViewer x:Name="AiChatScrollViewer"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled"
+                                      CanContentScroll="False"
+                                      PreviewMouseWheel="AiChatScrollViewer_PreviewMouseWheel"
+                                      MouseWheel="AiChatScrollViewer_PreviewMouseWheel"
+                                      Padding="12,10">
                         <ItemsControl x:Name="AiChatItemsControl"
                                       ItemsSource="{Binding Messages}"
                                       HorizontalContentAlignment="Stretch"
@@ -4051,6 +4085,7 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                     </ScrollViewer>
+                    </Grid>
 
                     <!-- Busy Progress & Status -->
                     <StackPanel Grid.Row="3" Margin="12,4,12,4">
