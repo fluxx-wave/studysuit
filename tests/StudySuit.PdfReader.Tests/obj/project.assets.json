@@ -1,7 +1,7 @@
 {
   "version": 4,
   "targets": {
-    "net8.0-windows": {
+    "net8.0-windows10.0.19041.0": {
       "bblanchon.PDFium.Linux/152.0.7961": {
         "type": "package",
         "compile": {
@@ -86,12 +86,12 @@
       "CommunityToolkit.Mvvm/8.4.2": {
         "type": "package",
         "compile": {
-          "lib/net8.0/CommunityToolkit.Mvvm.dll": {
+          "lib/net8.0-windows10.0.17763/CommunityToolkit.Mvvm.dll": {
             "related": ".xml"
           }
         },
         "runtime": {
-          "lib/net8.0/CommunityToolkit.Mvvm.dll": {
+          "lib/net8.0-windows10.0.17763/CommunityToolkit.Mvvm.dll": {
             "related": ".xml"
           }
         },
@@ -6609,7 +6609,7 @@
     }
   },
   "projectFileDependencyGroups": {
-    "net8.0-windows": [
+    "net8.0-windows10.0.19041.0": [
       "Microsoft.NET.Test.Sdk >= 17.8.0",
       "StudySuit.PdfReader >= 1.0.0",
       "coverlet.collector >= 6.0.0",
@@ -6633,15 +6633,15 @@
         "C:\\Users\\SURYA\\AppData\\Roaming\\NuGet\\NuGet.Config"
       ],
       "originalTargetFrameworks": [
-        "net8.0-windows"
+        "net8.0-windows10.0.19041.0"
       ],
       "sources": {
         "https://api.nuget.org/v3/index.json": {}
       },
       "frameworks": {
-        "net8.0-windows": {
-          "framework": "net8.0-windows7.0",
-          "targetAlias": "net8.0-windows",
+        "net8.0-windows10.0.19041.0": {
+          "framework": "net8.0-windows10.0.19041",
+          "targetAlias": "net8.0-windows10.0.19041.0",
           "projectReferences": {
             "D:\\studysuit\\src\\StudySuit.PdfReader\\StudySuit.PdfReader.csproj": {
               "projectPath": "D:\\studysuit\\src\\StudySuit.PdfReader\\StudySuit.PdfReader.csproj"
@@ -6662,9 +6662,9 @@
       "SdkAnalysisLevel": "11.0.100"
     },
     "frameworks": {
-      "net8.0-windows": {
-        "framework": "net8.0-windows7.0",
-        "targetAlias": "net8.0-windows",
+      "net8.0-windows10.0.19041.0": {
+        "framework": "net8.0-windows10.0.19041",
+        "targetAlias": "net8.0-windows10.0.19041.0",
         "dependencies": {
           "Microsoft.NET.Test.Sdk": {
             "target": "Package",
@@ -6704,12 +6704,19 @@
             "version": "[8.0.34, 8.0.34]"
           },
           {
+            "name": "Microsoft.Windows.SDK.NET.Ref",
+            "version": "[10.0.19041.57, 10.0.19041.57]"
+          },
+          {
             "name": "Microsoft.WindowsDesktop.App.Ref",
             "version": "[8.0.34, 8.0.34]"
           }
         ],
         "frameworkReferences": {
           "Microsoft.NETCore.App": {
+            "privateAssets": "all"
+          },
+          "Microsoft.Windows.SDK.NET.Ref.Windows": {
             "privateAssets": "all"
           },
           "Microsoft.WindowsDesktop.App.WPF": {

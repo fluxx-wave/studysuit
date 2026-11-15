@@ -1,1 +1,4 @@
 /src/StudySuit.PdfReader/bin/Release
+/src/StudySuit.PdfReader/bin
+/src/StudySuit.PdfReader/obj
+/tests/StudySuit.PdfReader.Tests

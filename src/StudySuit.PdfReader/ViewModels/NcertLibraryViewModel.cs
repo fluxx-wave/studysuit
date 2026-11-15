@@ -68,10 +68,18 @@ public sealed partial class NcertLibraryViewModel : ObservableObject
     ];
 
     public event Action<string>? BookOpenRequested;
+    private readonly object _filteredLock = new();
 
     public NcertLibraryViewModel(INcertLibraryService? libraryService = null)
     {
         _libraryService = libraryService ?? new NcertLibraryService();
+        try
+        {
+            System.Windows.Data.BindingOperations.EnableCollectionSynchronization(FilteredBooks, _filteredLock);
+        }
+        catch
+        {
+        }
         LoadCatalog();
     }
 

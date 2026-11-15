@@ -136,22 +136,23 @@
                 </ui:Button>
 
                 <!-- Pinned Home Dashboard Button -->
-                <ToggleButton DockPanel.Dock="Left"
-                              IsChecked="{Binding IsHomeActive, Mode=OneWay}"
-                              Command="{Binding ShowHomeCommand}"
-                              Margin="0,0,8,0"
-                              Padding="12,5"
-                              BorderThickness="1"
-                              Foreground="{DynamicResource TextFillColorPrimaryBrush}"
-                              Cursor="Hand"
-                              ToolTip="Home Study Dashboard">
-                    <ToggleButton.Style>
-                        <Style TargetType="ToggleButton">
+                <RadioButton GroupName="MainWorkspaceTabs"
+                             DockPanel.Dock="Left"
+                             IsChecked="{Binding IsHomeActive, Mode=TwoWay}"
+                             Command="{Binding ShowHomeCommand}"
+                             Margin="0,0,8,0"
+                             Padding="12,5"
+                             BorderThickness="1"
+                             Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                             Cursor="Hand"
+                             ToolTip="Home Study Dashboard">
+                    <RadioButton.Style>
+                        <Style TargetType="RadioButton">
                             <Setter Property="Background" Value="Transparent" />
                             <Setter Property="BorderBrush" Value="Transparent" />
                             <Setter Property="Template">
                                 <Setter.Value>
-                                    <ControlTemplate TargetType="ToggleButton">
+                                    <ControlTemplate TargetType="RadioButton">
                                         <Border x:Name="HomeTabBorder"
                                                 CornerRadius="6"
                                                 Padding="{TemplateBinding Padding}"
@@ -176,26 +177,27 @@
                                 </Setter.Value>
                             </Setter>
                         </Style>
-                    </ToggleButton.Style>
-                </ToggleButton>
+                    </RadioButton.Style>
+                </RadioButton>
 
                 <!-- Pinned Notes Studio Tab Button -->
-                <ToggleButton DockPanel.Dock="Left"
-                              IsChecked="{Binding IsNotesActive, Mode=OneWay}"
-                              Command="{Binding ShowNotesCommand}"
-                              Margin="0,0,6,0"
-                              Padding="12,5"
-                              BorderThickness="1"
-                              Foreground="{DynamicResource TextFillColorPrimaryBrush}"
-                              Cursor="Hand"
-                              ToolTip="Note-Taking Studio (Handwriting, Equations, Charts &amp; Pictures)">
-                    <ToggleButton.Style>
-                        <Style TargetType="ToggleButton">
+                <RadioButton GroupName="MainWorkspaceTabs"
+                             DockPanel.Dock="Left"
+                             IsChecked="{Binding IsNotesActive, Mode=TwoWay}"
+                             Command="{Binding ShowNotesCommand}"
+                             Margin="0,0,6,0"
+                             Padding="12,5"
+                             BorderThickness="1"
+                             Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                             Cursor="Hand"
+                             ToolTip="Note-Taking Studio (Handwriting, Equations, Charts &amp; Pictures)">
+                    <RadioButton.Style>
+                        <Style TargetType="RadioButton">
                             <Setter Property="Background" Value="Transparent" />
                             <Setter Property="BorderBrush" Value="Transparent" />
                             <Setter Property="Template">
                                 <Setter.Value>
-                                    <ControlTemplate TargetType="ToggleButton">
+                                    <ControlTemplate TargetType="RadioButton">
                                         <Border x:Name="NotesTabBorder"
                                                 CornerRadius="6"
                                                 Padding="{TemplateBinding Padding}"
@@ -220,26 +222,27 @@
                                 </Setter.Value>
                             </Setter>
                         </Style>
-                    </ToggleButton.Style>
-                </ToggleButton>
+                    </RadioButton.Style>
+                </RadioButton>
 
                 <!-- Pinned News & Current Affairs Feed Tab Button -->
-                <ToggleButton DockPanel.Dock="Left"
-                              IsChecked="{Binding IsFeedActive, Mode=OneWay}"
-                              Command="{Binding ShowFeedCommand}"
-                              Margin="0,0,8,0"
-                              Padding="12,5"
-                              BorderThickness="1"
-                              Foreground="{DynamicResource TextFillColorPrimaryBrush}"
-                              Cursor="Hand"
-                              ToolTip="Daily, Weekly &amp; Monthly News Feed">
-                    <ToggleButton.Style>
-                        <Style TargetType="ToggleButton">
+                <RadioButton GroupName="MainWorkspaceTabs"
+                             DockPanel.Dock="Left"
+                             IsChecked="{Binding IsFeedActive, Mode=TwoWay}"
+                             Command="{Binding ShowFeedCommand}"
+                             Margin="0,0,8,0"
+                             Padding="12,5"
+                             BorderThickness="1"
+                             Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                             Cursor="Hand"
+                             ToolTip="Daily, Weekly &amp; Monthly News Feed">
+                    <RadioButton.Style>
+                        <Style TargetType="RadioButton">
                             <Setter Property="Background" Value="Transparent" />
                             <Setter Property="BorderBrush" Value="Transparent" />
                             <Setter Property="Template">
                                 <Setter.Value>
-                                    <ControlTemplate TargetType="ToggleButton">
+                                    <ControlTemplate TargetType="RadioButton">
                                         <Border x:Name="FeedTabBorder"
                                                 CornerRadius="6"
                                                 Padding="{TemplateBinding Padding}"
@@ -264,26 +267,27 @@
                                 </Setter.Value>
                             </Setter>
                         </Style>
-                    </ToggleButton.Style>
-                </ToggleButton>
+                    </RadioButton.Style>
+                </RadioButton>
 
                 <!-- NCERT Books Library Tab Button -->
-                <ToggleButton DockPanel.Dock="Left"
-                              IsChecked="{Binding IsLibraryActive, Mode=OneWay}"
-                              Command="{Binding ShowLibraryCommand}"
-                              Margin="0,0,8,0"
-                              Padding="12,5"
-                              BorderThickness="1"
-                              Foreground="{DynamicResource TextFillColorPrimaryBrush}"
-                              Cursor="Hand"
-                              ToolTip="NCERT Textbooks Library (Class 6–12 • Direct Download &amp; Read)">
-                    <ToggleButton.Style>
-                        <Style TargetType="ToggleButton">
+                <RadioButton GroupName="MainWorkspaceTabs"
+                             DockPanel.Dock="Left"
+                             IsChecked="{Binding IsLibraryActive, Mode=TwoWay}"
+                             Command="{Binding ShowLibraryCommand}"
+                             Margin="0,0,8,0"
+                             Padding="12,5"
+                             BorderThickness="1"
+                             Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                             Cursor="Hand"
+                             ToolTip="NCERT Textbooks Library (Class 6–12 • Direct Download &amp; Read)">
+                    <RadioButton.Style>
+                        <Style TargetType="RadioButton">
                             <Setter Property="Background" Value="Transparent" />
                             <Setter Property="BorderBrush" Value="Transparent" />
                             <Setter Property="Template">
                                 <Setter.Value>
-                                    <ControlTemplate TargetType="ToggleButton">
+                                    <ControlTemplate TargetType="RadioButton">
                                         <Border x:Name="LibraryTabBorder"
                                                 CornerRadius="6"
                                                 Padding="{TemplateBinding Padding}"
@@ -308,8 +312,8 @@
                                 </Setter.Value>
                             </Setter>
                         </Style>
-                    </ToggleButton.Style>
-                </ToggleButton>
+                    </RadioButton.Style>
+                </RadioButton>
 
                 <!-- Open Document Tabs -->
                 <ListBox ItemsSource="{Binding Tabs}"
@@ -1012,7 +1016,7 @@
             <!-- 5A. DEFAULT HOME STUDY SUITE DASHBOARD -->
             <Grid x:Name="HomeDashboardRoot"
                   Visibility="{Binding ShowHomeDashboard, Converter={StaticResource BoolToVis}}"
-                  Background="{DynamicResource ApplicationBackgroundBrush}"
+                  Background="{DynamicResource SolidBackgroundFillColorBaseBrush}"
                   IsVisibleChanged="AnimatedSurface_IsVisibleChanged">
                 <Grid.RenderTransform>
                     <TranslateTransform />
@@ -1965,6 +1969,7 @@
                              VirtualizingPanel.ScrollUnit="Pixel"
                              Stylus.IsPressAndHoldEnabled="False"
                              Stylus.IsFlicksEnabled="False"
+                             Loaded="PdfPageList_Loaded"
                              PreviewMouseWheel="PdfPageList_PreviewMouseWheel">
                         <ListBox.Style>
                             <Style TargetType="ListBox">
@@ -2532,7 +2537,7 @@
             <!-- 5C. NOTE-TAKING STUDIO WORKSPACE -->
             <Grid x:Name="NotesStudioRoot"
                   Visibility="{Binding ShowNotesStudio, Converter={StaticResource BoolToVis}}"
-                  Background="{DynamicResource ApplicationBackgroundBrush}"
+                  Background="{DynamicResource SolidBackgroundFillColorBaseBrush}"
                   IsVisibleChanged="AnimatedSurface_IsVisibleChanged">
                 <Grid.RenderTransform>
                     <TranslateTransform />
@@ -2877,7 +2882,7 @@
         <!-- NEWS & CURRENT AFFAIRS FEED (Daily, Weekly, Monthly) -->
             <Grid x:Name="NewsFeedRoot"
                   Visibility="{Binding ShowNewsFeed, Converter={StaticResource BoolToVis}}"
-                  Background="{DynamicResource ApplicationBackgroundBrush}"
+                  Background="{DynamicResource SolidBackgroundFillColorBaseBrush}"
                   IsVisibleChanged="AnimatedSurface_IsVisibleChanged">
                 <Grid.RenderTransform>
                     <TranslateTransform />
@@ -3400,7 +3405,7 @@
         <!-- NCERT TEXTBOOKS LIBRARY (Class 6 to 12 • 1-Click Download & Read) -->
         <Grid x:Name="NcertLibraryRoot"
               Visibility="{Binding ShowNcertLibrary, Converter={StaticResource BoolToVis}}"
-              Background="{DynamicResource ApplicationBackgroundBrush}"
+              Background="{DynamicResource SolidBackgroundFillColorBaseBrush}"
               IsVisibleChanged="AnimatedSurface_IsVisibleChanged">
             <Grid.RenderTransform>
                 <TranslateTransform />

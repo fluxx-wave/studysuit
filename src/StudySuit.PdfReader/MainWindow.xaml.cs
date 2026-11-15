@@ -46,6 +46,7 @@ public partial class MainWindow : FluentWindow
     private bool _isWordPreviewBusy;
     private readonly List<Point> _inkCapturePoints = [];
     private readonly HashSet<int> _paintedWordIndices = [];
+    private readonly IOcrService _ocrService = new WindowsOcrService();
 
     public MainWindow(MainViewModel viewModel)
     {
@@ -148,24 +149,17 @@ public partial class MainWindow : FluentWindow
             }
 
             // Always ensure the normal (restored) window size comfortably fits the screen with margins
-            double targetWidth = Math.Clamp(workWidth * 0.90, 720, 1380);
-            double targetHeight = Math.Clamp(workHeight * 0.88, 520, 860);
+            double targetWidth = Math.Clamp(workWidth * 0.90, 540, 1280);
+            double targetHeight = Math.Clamp(workHeight * 0.88, 460, 800);
 
-            // Never let normal size exceed the work area (leave margin for dragging and system chrome)
-            targetWidth = Math.Min(targetWidth, Math.Max(540, workWidth - 24));
-            targetHeight = Math.Min(targetHeight, Math.Max(460, workHeight - 24));
+            // Never let normal size exceed the work area (leave ample margin for dragging and system chrome)
+            targetWidth = Math.Min(targetWidth, Math.Max(540, workWidth - 40));
+            targetHeight = Math.Min(targetHeight, Math.Max(460, workHeight - 40));
 
             Width = targetWidth;
             Height = targetHeight;
             Left = workLeft + Math.Max(0, (workWidth - targetWidth) / 2.0);
             Top = workTop + Math.Max(0, (workHeight - targetHeight) / 2.0);
-
-            // On compact laptop screens (1366x768, 1280x800, or scaled 1080p where work area width <= 1366 or height <= 768),
-            // start maximized so all controls, title bar, tabs, and status bar are fully visible without off-screen clipping.
-            if (workWidth <= 1366 || workHeight <= 768)
-            {
-                WindowState = WindowState.Maximized;
-            }
         }
         catch
         {
@@ -174,12 +168,10 @@ public partial class MainWindow : FluentWindow
             double fallbackH = SystemParameters.WorkArea.Height;
             if (fallbackW > 0 && fallbackH > 0)
             {
-                Width = Math.Min(fallbackW - 20, 1180);
-                Height = Math.Min(fallbackH - 20, 720);
-                if (fallbackW <= 1366 || fallbackH <= 768)
-                {
-                    WindowState = WindowState.Maximized;
-                }
+                Width = Math.Clamp(fallbackW * 0.90, 540, Math.Max(540, fallbackW - 40));
+                Height = Math.Clamp(fallbackH * 0.88, 460, Math.Max(460, fallbackH - 40));
+                Left = Math.Max(0, (fallbackW - Width) / 2.0);
+                Top = Math.Max(0, (fallbackH - Height) / 2.0);
             }
         }
     }
@@ -321,14 +313,31 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    private void MainWindow_Loaded(object sender, RoutedEventArgs e)
+    private void EnsurePageScrollViewer()
     {
+        if (_pageScrollViewer is not null && _pdfSmoothScroller is not null)
+        {
+            return;
+        }
+
         _pageScrollViewer = FindVisualChild<ScrollViewer>(PdfPageList);
         if (_pageScrollViewer is not null)
         {
+            _pageScrollViewer.ScrollChanged -= PageScrollViewer_ScrollChanged;
             _pageScrollViewer.ScrollChanged += PageScrollViewer_ScrollChanged;
+            _pdfSmoothScroller?.Dispose();
             _pdfSmoothScroller = new SmoothScrollController(_pageScrollViewer);
         }
+    }
+
+    private void PdfPageList_Loaded(object sender, RoutedEventArgs e)
+    {
+        EnsurePageScrollViewer();
+    }
+
+    private void MainWindow_Loaded(object sender, RoutedEventArgs e)
+    {
+        EnsurePageScrollViewer();
 
         _aiChatSmoothScroller = new SmoothScrollController(AiChatScrollViewer);
         if (NewsFeedScrollViewer is not null)
@@ -624,6 +633,7 @@ public partial class MainWindow : FluentWindow
 
         if (_wiredTab is not null)
         {
+            EnsurePageScrollViewer();
             _wiredTab.ScrollToPageRequested += OnScrollToPageRequested;
             _wiredTab.PropertyChanged += Tab_PropertyChanged;
             UpdateViewportMetrics();
@@ -726,7 +736,11 @@ public partial class MainWindow : FluentWindow
         _wiredTab.SetVisiblePageFromScroll(bestPage);
     }
 
-    private void Viewport_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateViewportMetrics();
+    private void Viewport_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        EnsurePageScrollViewer();
+        UpdateViewportMetrics();
+    }
 
     private void UpdateViewportMetrics()
     {
@@ -745,6 +759,8 @@ public partial class MainWindow : FluentWindow
         {
             return;
         }
+
+        EnsurePageScrollViewer();
 
         if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
         {
@@ -1831,6 +1847,9 @@ public partial class MainWindow : FluentWindow
     private static string Truncate(string text, int maxLen) =>
         text.Length > maxLen ? $"{text[..maxLen]}…" : text;
 
+    private static int CountWords(string s) =>
+        string.IsNullOrWhiteSpace(s) ? 0 : s.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
+
     // ==================== CIRCLE TO SEARCH WITH AI ====================
     private string _circleSelectionText = string.Empty;
     private int _circleSelectionPageNumber;
@@ -1843,8 +1862,36 @@ public partial class MainWindow : FluentWindow
         if (_wiredTab is null) return;
 
         _circleSelectionPageNumber = pageVm.PageNumber;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+
         var (extractedText, matchedRects) = await _wiredTab.ExtractTextInPolygonWithRectsAsync(pageVm.PageNumber, normPolygon);
         _circleSelectionText = extractedText;
+
+        bool usedOcr = false;
+        string ocrText = string.Empty;
+        if (_ocrService.IsSupported)
+        {
+            ocrText = await _wiredTab.ExtractTextWithOcrAsync(
+                pageVm.PageNumber,
+                normRect,
+                _ocrService,
+                pageVm.RenderedImage,
+                normPolygon);
+
+            if (!string.IsNullOrWhiteSpace(ocrText))
+            {
+                usedOcr = true;
+                if (string.IsNullOrWhiteSpace(_circleSelectionText))
+                {
+                    _circleSelectionText = ocrText.Trim();
+                }
+                else if (ocrText.Length > _circleSelectionText.Length * 1.25)
+                {
+                    _circleSelectionText = ocrText.Trim();
+                }
+            }
+        }
+        sw.Stop();
 
         // Highlight selection with a friendly cyan glow:
         // If specific words were detected inside the circle, highlight the exact word boxes!
@@ -1858,16 +1905,20 @@ public partial class MainWindow : FluentWindow
             _wiredTab.RotationDegrees,
             new SolidColorBrush(Color.FromArgb(0x40, 0x38, 0xBD, 0xF8)));
 
-        CircleToSearchPageBadge.Text = $" • Page {pageVm.PageNumber}";
+        string engineBadge = usedOcr ? $" • OCR ({_ocrService.RecognizerLanguage})" : " • Vector Text";
+        CircleToSearchPageBadge.Text = $" • Page {pageVm.PageNumber}{engineBadge}";
+
         if (!string.IsNullOrWhiteSpace(_circleSelectionText))
         {
             CircleToSearchSnippetText.Text = $"\"{Truncate(_circleSelectionText, 180)}\"";
             CircleToSearchSnippetText.FontStyle = FontStyles.Normal;
+            _viewModel.GlobalStatusText = $"Circle to Search: captured {CountWords(_circleSelectionText)} words in {sw.ElapsedMilliseconds}ms ({(_ocrService.IsSupported ? _ocrService.RecognizerLanguage : "Vector")})";
         }
         else
         {
             CircleToSearchSnippetText.Text = "Circled visual diagram or region (no plain text detected)";
             CircleToSearchSnippetText.FontStyle = FontStyles.Italic;
+            _viewModel.GlobalStatusText = $"Circle to Search: visual region on page {pageVm.PageNumber} in {sw.ElapsedMilliseconds}ms";
         }
 
         CircleToSearchCard.Visibility = Visibility.Visible;

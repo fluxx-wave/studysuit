@@ -57,7 +57,20 @@ public sealed partial class NcertBookItem : ObservableObject
     [ObservableProperty]
     private bool _areChaptersExpanded;
 
+    private readonly object _chaptersLock = new();
+
     public ObservableCollection<NcertChapterItem> Chapters { get; } = [];
+
+    public NcertBookItem()
+    {
+        try
+        {
+            System.Windows.Data.BindingOperations.EnableCollectionSynchronization(Chapters, _chaptersLock);
+        }
+        catch
+        {
+        }
+    }
 
     public bool HasMultipleChapters => Chapters.Count > 1;
 

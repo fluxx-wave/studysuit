@@ -179,9 +179,12 @@ public sealed class NcertLibraryService : INcertLibraryService
         IProgress<(double Percent, string Status)>? progress = null,
         CancellationToken ct = default)
     {
-        book.IsDownloading = true;
-        book.DownloadProgressPercent = 0;
-        book.DownloadStatusText = "Connecting to NCERT server...";
+        RunOnUIThread(() =>
+        {
+            book.IsDownloading = true;
+            book.DownloadProgressPercent = 0;
+            book.DownloadStatusText = "Connecting to NCERT server...";
+        });
         progress?.Report((2, "Connecting to NCERT server..."));
 
         string bookDir = Path.Combine(_libraryRoot, book.Code);
@@ -222,9 +225,13 @@ public sealed class NcertLibraryService : INcertLibraryService
                             lastReportTick = now;
                             double pct = Math.Min(90.0, (double)totalRead / totalBytes * 90.0);
                             string mbStr = $"{totalRead / (1024.0 * 1024.0):F1} MB / {totalBytes / (1024.0 * 1024.0):F1} MB";
-                            book.DownloadProgressPercent = pct;
-                            book.DownloadStatusText = $"Downloading {book.ShortTitle} ({pct:F0}%) • {mbStr}";
-                            progress?.Report((pct, book.DownloadStatusText));
+                            string status = $"Downloading {book.ShortTitle} ({pct:F0}%) • {mbStr}";
+                            RunOnUIThread(() =>
+                            {
+                                book.DownloadProgressPercent = pct;
+                                book.DownloadStatusText = status;
+                            });
+                            progress?.Report((pct, status));
                         }
                     }
 
@@ -234,8 +241,11 @@ public sealed class NcertLibraryService : INcertLibraryService
 
             if (zipSuccess && File.Exists(tempZip))
             {
-                book.DownloadProgressPercent = 92;
-                book.DownloadStatusText = "Extracting chapters...";
+                RunOnUIThread(() =>
+                {
+                    book.DownloadProgressPercent = 92;
+                    book.DownloadStatusText = "Extracting chapters...";
+                });
                 progress?.Report((92, "Extracting chapters..."));
 
                 await Task.Run(() =>
@@ -277,7 +287,10 @@ public sealed class NcertLibraryService : INcertLibraryService
             string ch1Url = $"https://ncert.nic.in/textbook/pdf/{book.Code}01.pdf";
             string ch1Dest = Path.Combine(bookDir, $"{book.Code}01.pdf");
 
-            book.DownloadStatusText = "Downloading Chapter 1...";
+            RunOnUIThread(() =>
+            {
+                book.DownloadStatusText = "Downloading Chapter 1...";
+            });
             progress?.Report((50, "Downloading Chapter 1..."));
 
             using var chReq = new HttpRequestMessage(HttpMethod.Get, ch1Url);

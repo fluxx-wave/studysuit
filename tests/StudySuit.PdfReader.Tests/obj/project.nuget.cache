@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "OZRBW8V/PMw=",
+  "dgSpecHash": "LcPp8KFHeFo=",
   "success": true,
   "projectFilePath": "D:\\studysuit\\tests\\StudySuit.PdfReader.Tests\\StudySuit.PdfReader.Tests.csproj",
   "expectedPackageFiles": [
@@ -108,7 +108,8 @@
     "C:\\Users\\SURYA\\.nuget\\packages\\xunit.runner.visualstudio\\2.5.3\\xunit.runner.visualstudio.2.5.3.nupkg.sha512",
     "C:\\Users\\SURYA\\.nuget\\packages\\microsoft.netcore.app.ref\\8.0.34\\microsoft.netcore.app.ref.8.0.34.nupkg.sha512",
     "C:\\Users\\SURYA\\.nuget\\packages\\microsoft.windowsdesktop.app.ref\\8.0.34\\microsoft.windowsdesktop.app.ref.8.0.34.nupkg.sha512",
-    "C:\\Users\\SURYA\\.nuget\\packages\\microsoft.aspnetcore.app.ref\\8.0.34\\microsoft.aspnetcore.app.ref.8.0.34.nupkg.sha512"
+    "C:\\Users\\SURYA\\.nuget\\packages\\microsoft.aspnetcore.app.ref\\8.0.34\\microsoft.aspnetcore.app.ref.8.0.34.nupkg.sha512",
+    "C:\\Users\\SURYA\\.nuget\\packages\\microsoft.windows.sdk.net.ref\\10.0.19041.57\\microsoft.windows.sdk.net.ref.10.0.19041.57.nupkg.sha512"
   ],
   "logs": []
 }

@@ -344,7 +344,44 @@ public static partial class MathEquationRenderer
         // 3. Handle \ce{...} (mhchem syntax)
         s = PreprocessChemicalFormulas(s);
 
+        // 4. Normalize unescaped scientific commands and chemical reaction arrows
+        s = NormalizeScientificSyntax(s);
+
         return s.Trim();
+    }
+
+    private static string NormalizeScientificSyntax(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return s;
+
+        // 1. Unescaped reaction arrows: xrightarrow\Delta -> \xrightarrow{\Delta}, xrightarrow{heat} -> \xrightarrow{heat}, xrightarrow -> \xrightarrow
+        s = Regex.Replace(s, @"(?<!\\)xrightarrow(?:\s*\\([A-Za-z]+)|\s*\{([^}]*)\})?", m =>
+        {
+            string cond = m.Groups[1].Success ? ("\\" + m.Groups[1].Value) : (m.Groups[2].Success ? m.Groups[2].Value : "");
+            return string.IsNullOrEmpty(cond) ? @"\xrightarrow " : @$"\xrightarrow{{{cond}}} ";
+        });
+
+        // 2. \xrightarrow without braces: e.g. \xrightarrow\Delta -> \xrightarrow{\Delta}
+        s = Regex.Replace(s, @"\\xrightarrow\s*\\([A-Za-z]+)", @"\xrightarrow{\$1}");
+        s = Regex.Replace(s, @"\\xrightarrow\s*([A-Za-z0-9]+)(?![\w{])", @"\xrightarrow{$1}");
+
+        // 3. Unescaped arrows: rightarrow, leftarrow, rightleftharpoons, leftrightarrow
+        s = Regex.Replace(s, @"(?<!\\)\b(rightarrow|leftarrow|rightleftharpoons|leftrightarrow)\b", @"\$1");
+
+        // 4. Missing backslash on \text: text{...} -> \text{...}
+        s = Regex.Replace(s, @"(?<!\\)\btext\{([^}]+)\}", @"\text{$1}");
+
+        // 5. Raw concatenated text tokens like textFeSO_4 or textFe_2textO_3
+        s = Regex.Replace(s, @"(?<!\\)\btext([A-Z][a-zA-Z0-9]*)", @"\text{$1}");
+        s = Regex.Replace(s, @"(?<!\\)([A-Za-z0-9_]+)text([A-Z][a-zA-Z0-9]*)", @"$1\text{$2}");
+
+        // 6. State indicators: (s), (l), (g), (aq) -> \text{(s)}, etc.
+        s = Regex.Replace(s, @"(?<!\\text\{)\((s|l|g|aq)\)", @"\text{($1)}");
+
+        // 7. Unescaped Greek letters often used as reaction conditions
+        s = Regex.Replace(s, @"(?<!\\)\b(Delta|alpha|beta|gamma|theta|lambda|mu|pi|sigma|omega)\b", @"\$1");
+
+        return s;
     }
 
     private static string PreprocessChemicalFormulas(string input)

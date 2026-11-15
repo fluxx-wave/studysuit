@@ -333,80 +333,48 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     {
         if (value)
         {
-            IsNotesActive = false;
-            IsFeedActive = false;
-            IsLibraryActive = false;
-            IsPropertiesOpen = false;
-            IsSearchBarVisible = false;
-            RefreshDashboard();
-            RefreshStudyPlannerCollections();
-            GlobalStatusText = "Home Dashboard • Study timer, calendar, tasks & PDFs";
+            SetActiveWorkspace(home: true);
         }
-        else if (!IsNotesActive && !IsFeedActive && !IsLibraryActive && SelectedTab is not null)
+        else
         {
-            GlobalStatusText = $"{SelectedTab.DocumentInfo.FileName} • {SelectedTab.PageCount} pages • {SelectedTab.FileSizeDisplay}";
+            NotifyWorkspaceVisibilityProperties();
         }
-
-        NotifyWorkspaceVisibilityProperties();
     }
 
     partial void OnIsNotesActiveChanged(bool value)
     {
         if (value)
         {
-            IsHomeActive = false;
-            IsFeedActive = false;
-            IsLibraryActive = false;
-            IsPropertiesOpen = false;
-            IsSearchBarVisible = false;
-            GlobalStatusText = "Note-Taking Studio • Handwriting fonts, equations, charts, sketches & pictures";
+            SetActiveWorkspace(notes: true);
         }
-        else if (!IsHomeActive && !IsFeedActive && !IsLibraryActive && SelectedTab is not null)
+        else
         {
-            GlobalStatusText = $"{SelectedTab.DocumentInfo.FileName} • {SelectedTab.PageCount} pages • {SelectedTab.FileSizeDisplay}";
+            NotifyWorkspaceVisibilityProperties();
         }
-
-        NotifyWorkspaceVisibilityProperties();
     }
 
     partial void OnIsFeedActiveChanged(bool value)
     {
         if (value)
         {
-            IsHomeActive = false;
-            IsNotesActive = false;
-            IsLibraryActive = false;
-            IsPropertiesOpen = false;
-            IsSearchBarVisible = false;
-            GlobalStatusText = "News & Current Affairs Feed • Daily, Weekly & Monthly digests";
-            _ = NewsFeed.EnsureLoadedAsync();
+            SetActiveWorkspace(feed: true);
         }
-        else if (!IsHomeActive && !IsNotesActive && !IsLibraryActive && SelectedTab is not null)
+        else
         {
-            GlobalStatusText = $"{SelectedTab.DocumentInfo.FileName} • {SelectedTab.PageCount} pages • {SelectedTab.FileSizeDisplay}";
+            NotifyWorkspaceVisibilityProperties();
         }
-
-        NotifyWorkspaceVisibilityProperties();
     }
 
     partial void OnIsLibraryActiveChanged(bool value)
     {
         if (value)
         {
-            IsHomeActive = false;
-            IsNotesActive = false;
-            IsFeedActive = false;
-            IsPropertiesOpen = false;
-            IsSearchBarVisible = false;
-            GlobalStatusText = "NCERT Library • Browse, download and read official Class 6–12 textbooks";
-            _ = Library.RefreshStatesAsync();
+            SetActiveWorkspace(library: true);
         }
-        else if (!IsHomeActive && !IsNotesActive && !IsFeedActive && SelectedTab is not null)
+        else
         {
-            GlobalStatusText = $"{SelectedTab.DocumentInfo.FileName} • {SelectedTab.PageCount} pages • {SelectedTab.FileSizeDisplay}";
+            NotifyWorkspaceVisibilityProperties();
         }
-
-        NotifyWorkspaceVisibilityProperties();
     }
 
     partial void OnDashboardSearchTextChanged(string value) => ApplyDashboardFilter();
@@ -708,40 +676,78 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
 
     // Navigation & PDF Commands
+    public void SetActiveWorkspace(bool home = false, bool notes = false, bool feed = false, bool library = false)
+    {
+#pragma warning disable MVVMTK0034
+        _isHomeActive = home;
+        _isNotesActive = notes;
+        _isFeedActive = feed;
+        _isLibraryActive = library;
+#pragma warning restore MVVMTK0034
+
+        if (home)
+        {
+            IsPropertiesOpen = false;
+            IsSearchBarVisible = false;
+            RefreshDashboard();
+            RefreshStudyPlannerCollections();
+            GlobalStatusText = "Home Dashboard • Study timer, calendar, tasks & PDFs";
+        }
+        else if (notes)
+        {
+            IsPropertiesOpen = false;
+            IsSearchBarVisible = false;
+            GlobalStatusText = "Notes Studio • Notebooks, formulas, sketches & attachments";
+        }
+        else if (feed)
+        {
+            IsPropertiesOpen = false;
+            IsSearchBarVisible = false;
+            GlobalStatusText = "News Feed • Educational updates & announcements";
+            _ = NewsFeed.RefreshFeedAsync();
+        }
+        else if (library)
+        {
+            IsPropertiesOpen = false;
+            IsSearchBarVisible = false;
+            GlobalStatusText = "NCERT Library • Browse, download and read official Class 6–12 textbooks";
+            _ = Library.RefreshStatesAsync();
+        }
+        else if (SelectedTab is not null)
+        {
+            GlobalStatusText = $"{SelectedTab.DocumentInfo.FileName} • {SelectedTab.PageCount} pages • {SelectedTab.FileSizeDisplay}";
+        }
+
+        OnPropertyChanged(nameof(IsHomeActive));
+        OnPropertyChanged(nameof(IsNotesActive));
+        OnPropertyChanged(nameof(IsFeedActive));
+        OnPropertyChanged(nameof(IsLibraryActive));
+
+        NotifyWorkspaceVisibilityProperties();
+    }
+
     [RelayCommand]
     public void ShowHome()
     {
-        IsNotesActive = false;
-        IsFeedActive = false;
-        IsLibraryActive = false;
-        IsHomeActive = true;
+        SetActiveWorkspace(home: true);
     }
 
     [RelayCommand]
     public void ShowNotes()
     {
-        IsHomeActive = false;
-        IsFeedActive = false;
-        IsLibraryActive = false;
-        IsNotesActive = true;
+        SetActiveWorkspace(notes: true);
     }
 
     [RelayCommand]
     public void ShowFeed()
     {
-        IsHomeActive = false;
-        IsNotesActive = false;
-        IsLibraryActive = false;
-        IsFeedActive = true;
+        SetActiveWorkspace(feed: true);
     }
 
     [RelayCommand]
     public void ShowLibrary()
     {
-        IsHomeActive = false;
-        IsNotesActive = false;
-        IsFeedActive = false;
-        IsLibraryActive = true;
+        SetActiveWorkspace(library: true);
     }
 
     [RelayCommand]
@@ -753,10 +759,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         }
 
         SelectedTab = tab;
-        IsHomeActive = false;
-        IsNotesActive = false;
-        IsFeedActive = false;
-        IsLibraryActive = false;
+        SetActiveWorkspace();
     }
 
     [RelayCommand]

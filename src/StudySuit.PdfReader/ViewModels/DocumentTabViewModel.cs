@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using StudySuit.PdfReader.Models;
@@ -563,6 +565,130 @@ public sealed partial class DocumentTabViewModel : ObservableObject, IDisposable
         string text = string.Join(' ', sortedWords.Select(w => w.Text));
         var rects = sortedWords.Select(w => w.Bounds).ToList();
         return (text, rects);
+    }
+
+    public async Task<BitmapSource?> RenderPageForOcrAsync(int pageNumber)
+    {
+        try
+        {
+            var page = Pages.FirstOrDefault(p => p.PageNumber == pageNumber);
+            if (page?.RenderedImage is not null)
+            {
+                return page.RenderedImage;
+            }
+
+            return await _pdfService.RenderPageAsync(
+                FilePath,
+                pageNumber,
+                dpi: 192,
+                rotationDegrees: RotationDegrees,
+                invertColors: false,
+                password: _password,
+                cancellationToken: _lifetimeCts.Token);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<string> ExtractTextWithOcrAsync(
+        int pageNumber,
+        NormalizedRect normRect,
+        IOcrService ocrService,
+        BitmapSource? optionalBitmap = null,
+        IReadOnlyList<NormalizedPoint>? normPolygon = null)
+    {
+        if (ocrService is null || !ocrService.IsSupported)
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            var bmp = optionalBitmap ?? await RenderPageForOcrAsync(pageNumber);
+            if (bmp is null || bmp.PixelWidth <= 0 || bmp.PixelHeight <= 0)
+            {
+                return string.Empty;
+            }
+
+            int pw = bmp.PixelWidth;
+            int ph = bmp.PixelHeight;
+
+            // If a freehand polygon was drawn (Circle to Search lasso):
+            // Mask everything outside the polygon with pure white pixels (#FFFFFF).
+            // This guarantees OCR physically cannot see or recognize any text outside the user's circle!
+            if (normPolygon is not null && normPolygon.Count >= 3)
+            {
+                double minX = Math.Clamp(normPolygon.Min(p => p.X), 0.0, 1.0);
+                double maxX = Math.Clamp(normPolygon.Max(p => p.X), 0.0, 1.0);
+                double minY = Math.Clamp(normPolygon.Min(p => p.Y), 0.0, 1.0);
+                double maxY = Math.Clamp(normPolygon.Max(p => p.Y), 0.0, 1.0);
+
+                int px = (int)Math.Floor(minX * pw);
+                int py = (int)Math.Floor(minY * ph);
+                int cropW = (int)Math.Ceiling((maxX - minX) * pw);
+                int cropH = (int)Math.Ceiling((maxY - minY) * ph);
+
+                px = Math.Clamp(px, 0, pw - 1);
+                py = Math.Clamp(py, 0, ph - 1);
+                cropW = Math.Clamp(cropW, 1, pw - px);
+                cropH = Math.Clamp(cropH, 1, ph - py);
+
+                if (cropW < 4 || cropH < 4)
+                {
+                    return string.Empty;
+                }
+
+                var dv = new DrawingVisual();
+                using (var dc = dv.RenderOpen())
+                {
+                    dc.DrawRectangle(Brushes.White, null, new Rect(0, 0, cropW, cropH));
+                    var streamGeom = new StreamGeometry();
+                    using (var sgc = streamGeom.Open())
+                    {
+                        var first = normPolygon[0];
+                        sgc.BeginFigure(new Point(first.X * pw - px, first.Y * ph - py), isFilled: true, isClosed: true);
+                        for (int i = 1; i < normPolygon.Count; i++)
+                        {
+                            var pt = normPolygon[i];
+                            sgc.LineTo(new Point(pt.X * pw - px, pt.Y * ph - py), isStroked: false, isSmoothJoin: true);
+                        }
+                    }
+                    streamGeom.Freeze();
+                    dc.PushClip(streamGeom);
+                    dc.DrawImage(bmp, new Rect(-px, -py, pw, ph));
+                    dc.Pop();
+                }
+
+                var maskedBmp = new RenderTargetBitmap(cropW, cropH, 96, 96, PixelFormats.Pbgra32);
+                maskedBmp.Render(dv);
+                maskedBmp.Freeze();
+
+                return await ocrService.RecognizeTextFromBitmapAsync(maskedBmp);
+            }
+            else
+            {
+                int px = (int)Math.Floor(normRect.X * pw);
+                int py = (int)Math.Floor(normRect.Y * ph);
+                int cropW = (int)Math.Ceiling(normRect.Width * pw);
+                int cropH = (int)Math.Ceiling(normRect.Height * ph);
+
+                px = Math.Clamp(px, 0, pw - 1);
+                py = Math.Clamp(py, 0, ph - 1);
+                cropW = Math.Clamp(cropW, 1, pw - px);
+                cropH = Math.Clamp(cropH, 1, ph - py);
+
+                var crop = new CroppedBitmap(bmp, new Int32Rect(px, py, cropW, cropH));
+                crop.Freeze();
+
+                return await ocrService.RecognizeTextFromBitmapAsync(crop);
+            }
+        }
+        catch
+        {
+            return string.Empty;
+        }
     }
 
     public static bool IsPointInPolygon(NormalizedPoint pt, IReadOnlyList<NormalizedPoint> polygon)

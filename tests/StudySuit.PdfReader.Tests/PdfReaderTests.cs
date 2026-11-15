@@ -2182,11 +2182,11 @@ public sealed class PdfReaderTests : IDisposable
         // Ensure NcertLibraryRoot does NOT bind DataContext on its outer element (which would break ShowNcertLibrary visibility)
         Assert.DoesNotMatch(@"<Grid\s+x:Name=""NcertLibraryRoot""[^>]*DataContext=", xaml);
 
-        // Ensure NcertLibraryRoot has solid ApplicationBackgroundBrush
-        Assert.Matches(@"<Grid\s+x:Name=""NcertLibraryRoot""[^>]*Background=""{DynamicResource ApplicationBackgroundBrush}""", xaml);
+        // Ensure NcertLibraryRoot has solid background
+        Assert.Matches(@"<Grid\s+x:Name=""NcertLibraryRoot""[^>]*Background=""{DynamicResource SolidBackgroundFillColorBaseBrush}""", xaml);
 
-        // Ensure HomeDashboardRoot has solid ApplicationBackgroundBrush
-        Assert.Matches(@"<Grid\s+x:Name=""HomeDashboardRoot""[^>]*Background=""{DynamicResource ApplicationBackgroundBrush}""", xaml);
+        // Ensure HomeDashboardRoot has solid background
+        Assert.Matches(@"<Grid\s+x:Name=""HomeDashboardRoot""[^>]*Background=""{DynamicResource SolidBackgroundFillColorBaseBrush}""", xaml);
 
         // Ensure default window dimensions in XAML do not exceed 1200x750
         var widthMatch = System.Text.RegularExpressions.Regex.Match(xaml, @"Width=""(\d+)""");
@@ -2322,27 +2322,13 @@ public sealed class PdfReaderTests : IDisposable
         var bmp8 = MathEquationRenderer.RenderEquation(multiLine);
         Assert.True(bmp8.IsFrozen);
         Assert.True(bmp8.PixelHeight > 60); // Multiple stacked lines have increased height
-    }
 
-    [Fact]
-    public async Task InspectPage16Words()
-    {
-        string path = @"C:\Users\SURYA\AppData\Local\StudySuit.PdfReader\library\ncert\jesc1\jesc101.pdf";
-        if (!File.Exists(path)) return;
-
-        var pdfService = new PdfService();
-        var words = await pdfService.GetPageWordsAsync(path, 16);
-
-        var sb = new StringBuilder();
-        foreach (var w in words.Where(w => w.Text.Contains("decomposition", StringComparison.OrdinalIgnoreCase) ||
-                                           w.Text.Contains("equation", StringComparison.OrdinalIgnoreCase) ||
-                                           w.Text.Contains("energy", StringComparison.OrdinalIgnoreCase) ||
-                                           w.Text.Contains("electricity", StringComparison.OrdinalIgnoreCase) ||
-                                           w.Text.Contains("12", StringComparison.OrdinalIgnoreCase)))
-        {
-            sb.AppendLine($"Word: '{w.Text}' -> X={w.Bounds.X:F4}, Y={w.Bounds.Y:F4}, W={w.Bounds.Width:F4}, H={w.Bounds.Height:F4}");
-        }
-        File.WriteAllText(@"C:\Users\SURYA\.gemini\antigravity\brain\d218edce-7961-4978-918b-55ddf267c5d1\page16_words.txt", sb.ToString());
+        // 9. Exact unescaped scientific equation from user screenshot (e.g. from loose markdown/tokens)
+        string userUnescapedReaction = @"textFeSO_4(s) xrightarrow\Delta textFe_2textO_3(s) + textSO_2(g) + textSO_3(g)";
+        var bmp9 = MathEquationRenderer.RenderEquation(userUnescapedReaction);
+        Assert.True(bmp9.IsFrozen);
+        Assert.True(bmp9.PixelWidth > 120);
+        Assert.True(bmp9.PixelHeight > 25);
     }
 
     [Fact]
@@ -2410,6 +2396,105 @@ public sealed class PdfReaderTests : IDisposable
         Assert.Single(sessions);
         Assert.Equal(sessionTitle, sessions[0].Title);
         Assert.Equal(2, sessions[0].MessageCount);
+    }
+
+    [Fact]
+    public async Task WindowsOcrService_RecognizesMultiLineCircledQuestionFromRenderedBitmap()
+    {
+        var ocr = new WindowsOcrService();
+        Assert.True(ocr.IsSupported, $"OCR must be supported! Available languages: {string.Join(", ", Windows.Media.Ocr.OcrEngine.AvailableRecognizerLanguages.Select(l => l.LanguageTag))}");
+
+        int width = 950;
+        int height = 140;
+        var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(width, height, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
+        var dv = new System.Windows.Media.DrawingVisual();
+        using (var dc = dv.RenderOpen())
+        {
+            dc.DrawRectangle(System.Windows.Media.Brushes.White, null, new System.Windows.Rect(0, 0, width, height));
+            var ft = new System.Windows.Media.FormattedText(
+                "12. Write one equation each for decomposition reactions where energy is supplied in\nthe form of heat, light or electricity.",
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Windows.FlowDirection.LeftToRight,
+                new System.Windows.Media.Typeface("Arial"),
+                22,
+                System.Windows.Media.Brushes.Black,
+                1.0);
+            dc.DrawText(ft, new System.Windows.Point(20, 20));
+        }
+        rtb.Render(dv);
+        rtb.Freeze();
+
+        var crop = new System.Windows.Media.Imaging.CroppedBitmap(rtb, new System.Windows.Int32Rect(10, 10, width - 20, height - 20));
+        crop.Freeze();
+
+        string recognized = await ocr.RecognizeTextFromBitmapAsync(crop);
+
+        Assert.False(string.IsNullOrWhiteSpace(recognized));
+        Assert.Contains("Write one equation each for decomposition", recognized, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("heat, light or electricity", recognized, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task RealPage16_PdfWords_AndOcr_Inspection()
+    {
+        string pdfPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "StudySuit.PdfReader", "library", "ncert", "jesc1", "jesc101.pdf");
+
+        if (!File.Exists(pdfPath)) return;
+
+        var words = await _pdfService.GetPageWordsAsync(pdfPath, 16);
+        var q12Words = words.Where(w => w.Bounds.Y >= 0.115 && w.Bounds.Y <= 0.155).ToList();
+        using var doc = UglyToad.PdfPig.PdfDocument.Open(pdfPath);
+        var page = doc.GetPage(16);
+        var cb = page.CropBox.Bounds;
+        Assert.Fail($"CropBox: Left={cb.Left}, Bottom={cb.Bottom}, Top={cb.Top}, Height={cb.Height}, Width={cb.Width}");
+    }
+
+    [Fact]
+    public void MainViewModel_WorkspaceNavigation_MaintainsStrictMutualExclusion()
+    {
+        string statePath = Path.Combine(_tempDir, "excl_state.json");
+        string annDir = Path.Combine(_tempDir, "excl_ann");
+        var recentService = new RecentFilesService(statePath);
+        var annotationService = new AnnotationService(annDir);
+        using var vm = new MainViewModel(_pdfService, recentService, annotationService);
+
+        // 1. Initially Home is active
+        Assert.True(vm.IsHomeActive);
+        Assert.False(vm.IsNotesActive);
+        Assert.False(vm.IsFeedActive);
+        Assert.False(vm.IsLibraryActive);
+        Assert.True(vm.ShowHomeDashboard);
+        Assert.False(vm.ShowNcertLibrary);
+
+        // 2. Switch to Library
+        vm.ShowLibraryCommand.Execute(null);
+        Assert.False(vm.IsHomeActive);
+        Assert.False(vm.IsNotesActive);
+        Assert.False(vm.IsFeedActive);
+        Assert.True(vm.IsLibraryActive);
+        Assert.False(vm.ShowHomeDashboard);
+        Assert.True(vm.ShowNcertLibrary);
+
+        // 3. Switch to Notes
+        vm.ShowNotesCommand.Execute(null);
+        Assert.False(vm.IsHomeActive);
+        Assert.True(vm.IsNotesActive);
+        Assert.False(vm.IsFeedActive);
+        Assert.False(vm.IsLibraryActive);
+        Assert.False(vm.ShowHomeDashboard);
+        Assert.False(vm.ShowNcertLibrary);
+        Assert.True(vm.ShowNotesStudio);
+
+        // 4. Switch back to Home
+        vm.ShowHomeCommand.Execute(null);
+        Assert.True(vm.IsHomeActive);
+        Assert.False(vm.IsNotesActive);
+        Assert.False(vm.IsFeedActive);
+        Assert.False(vm.IsLibraryActive);
+        Assert.True(vm.ShowHomeDashboard);
+        Assert.False(vm.ShowNcertLibrary);
     }
 
     private string CreateSamplePdf(string fileName)
