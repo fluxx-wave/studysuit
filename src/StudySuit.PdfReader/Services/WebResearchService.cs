@@ -232,34 +232,81 @@ public sealed partial class WebResearchService : IWebResearchService
 
         try
         {
-            string url = $"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={Uri.EscapeDataString(query)}&srlimit={maxResults}&format=json&utf8=1";
+            // Primary: Generator search with pageimages (authentic high-res thumbnails) and extracts:
+            string url = $"https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch={Uri.EscapeDataString(query)}&gsrlimit={maxResults}&prop=pageimages|extracts&piprop=thumbnail&pithumbsize=600&exintro=1&explaintext=1&exsentences=3&format=json&utf8=1";
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
             req.Headers.TryAddWithoutValidation("User-Agent", "StudySuitPdfReader/1.0 (https://localhost)");
 
             using var resp = await _http.SendAsync(req, ct);
-            if (!resp.IsSuccessStatusCode)
+            if (resp.IsSuccessStatusCode)
             {
-                return [];
+                using var doc = await JsonDocument.ParseAsync(await resp.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+                if (doc.RootElement.TryGetProperty("query", out var qObj) &&
+                    qObj.TryGetProperty("pages", out var pagesObj) &&
+                    pagesObj.ValueKind == JsonValueKind.Object)
+                {
+                    var list = new List<WebSourceReference>();
+                    foreach (var prop in pagesObj.EnumerateObject())
+                    {
+                        var page = prop.Value;
+                        string title = page.TryGetProperty("title", out var t) ? t.GetString() ?? string.Empty : string.Empty;
+                        string extract = page.TryGetProperty("extract", out var e) ? e.GetString() ?? string.Empty : string.Empty;
+                        string thumbUrl = string.Empty;
+                        if (page.TryGetProperty("thumbnail", out var thumb) && thumb.TryGetProperty("source", out var src))
+                        {
+                            thumbUrl = src.GetString() ?? string.Empty;
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(title))
+                        {
+                            string snippet = extract;
+                            if (!string.IsNullOrWhiteSpace(thumbUrl))
+                            {
+                                snippet = $"[Authentic Image URL: {thumbUrl}]\n{snippet}".Trim();
+                            }
+
+                            list.Add(new WebSourceReference
+                            {
+                                Index = list.Count + 1,
+                                Title = $"{title} - Wikipedia",
+                                Url = $"https://en.wikipedia.org/wiki/{Uri.EscapeDataString(title.Replace(' ', '_'))}",
+                                Snippet = Truncate(snippet, 520)
+                            });
+                        }
+                    }
+
+                    if (list.Count > 0)
+                    {
+                        return list;
+                    }
+                }
             }
 
-            using var doc = await JsonDocument.ParseAsync(await resp.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
-            if (!doc.RootElement.TryGetProperty("query", out var qObj) ||
-                !qObj.TryGetProperty("search", out var arr) ||
+            // Fallback to standard list=search if generator returned no results:
+            string fallbackUrl = $"https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch={Uri.EscapeDataString(query)}&srlimit={maxResults}&format=json&utf8=1";
+            using var fallbackReq = new HttpRequestMessage(HttpMethod.Get, fallbackUrl);
+            fallbackReq.Headers.TryAddWithoutValidation("User-Agent", "StudySuitPdfReader/1.0 (https://localhost)");
+            using var fallbackResp = await _http.SendAsync(fallbackReq, ct);
+            if (!fallbackResp.IsSuccessStatusCode) return [];
+
+            using var fallbackDoc = await JsonDocument.ParseAsync(await fallbackResp.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+            if (!fallbackDoc.RootElement.TryGetProperty("query", out var fqObj) ||
+                !fqObj.TryGetProperty("search", out var arr) ||
                 arr.ValueKind != JsonValueKind.Array)
             {
                 return [];
             }
 
-            var list = new List<WebSourceReference>();
+            var fallbackList = new List<WebSourceReference>();
             foreach (var item in arr.EnumerateArray())
             {
                 string title = item.TryGetProperty("title", out var t) ? t.GetString() ?? string.Empty : string.Empty;
                 string snippet = item.TryGetProperty("snippet", out var s) ? CleanHtmlText(s.GetString() ?? string.Empty) : string.Empty;
                 if (!string.IsNullOrWhiteSpace(title))
                 {
-                    list.Add(new WebSourceReference
+                    fallbackList.Add(new WebSourceReference
                     {
-                        Index = list.Count + 1,
+                        Index = fallbackList.Count + 1,
                         Title = $"{title} - Wikipedia",
                         Url = $"https://en.wikipedia.org/wiki/{Uri.EscapeDataString(title.Replace(' ', '_'))}",
                         Snippet = Truncate(snippet, 420)
@@ -267,7 +314,7 @@ public sealed partial class WebResearchService : IWebResearchService
                 }
             }
 
-            return list;
+            return fallbackList;
         }
         catch
         {
