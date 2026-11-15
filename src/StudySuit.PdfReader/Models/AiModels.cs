@@ -189,6 +189,8 @@ public sealed class AiAssistantSettings
         "Always cite authentic official primary sources (e.g. NCRB, RBI, Census of India, PIB, NFHS). " +
         "When the user asks about the active document, use pdf_search or read_pdf_page and cite page numbers. " +
         "Use web_search only when external or up-to-date facts are required, and cite sources as [n]. " +
+        "When explaining concepts, categories, or comparisons, use rich visual ```cards blocks. " +
+        "When presenting data comparisons, distributions, or percentages, use interactive ```chart blocks. " +
         "When the user explicitly asks for an image, photo, or visual diagram from the internet, search for and provide authentic direct Markdown images `![Description](https://...)` from verified educational sources (e.g. Wikimedia Commons).";
 
     public const string DefaultResponseFormatPrompt =

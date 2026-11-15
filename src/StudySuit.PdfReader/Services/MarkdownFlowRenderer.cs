@@ -81,33 +81,47 @@ public static partial class MarkdownFlowRenderer
                 }
 
                 string blockContent = string.Join('\n', blockLines);
-                if (lang is "chart" or "graph")
+                string langClean = (lang ?? "").Trim().ToLowerInvariant();
+
+                if (langClean is "chart" or "charts" or "graph" or "plot" or "barchart" or "bar-chart" or "linechart" or "line-chart" or "piechart" or "pie-chart" or "donut" or "doughnut" or "scatter" or "scatterplot")
                 {
                     doc.Blocks.Add(BuildChartBlock(blockContent, palette, isDarkTheme));
                 }
-                else if (lang is "cards" or "grid")
+                else if (langClean is "card" or "cards" or "grid" or "card-grid" or "cards-grid" or "tile" or "tiles")
                 {
                     doc.Blocks.Add(BuildCardsBlock(blockContent, palette, isDarkTheme, onOpenLink));
                 }
-                else if (lang is "diagram" or "flow" or "flowchart")
+                else if (langClean is "diagram" or "flow" or "flowchart")
                 {
                     doc.Blocks.Add(BuildDiagramBlock(blockContent, palette));
                 }
-                else if (lang is "metrics" or "kpi" or "stats")
+                else if (langClean is "metrics" or "kpi" or "stats")
                 {
                     doc.Blocks.Add(BuildMetricsBlock(blockContent, palette));
                 }
-                else if (lang is "callout" or "alert")
+                else if (langClean is "callout" or "alert")
                 {
                     doc.Blocks.Add(BuildCalloutJsonBlock(blockContent, palette, isDarkTheme, onOpenLink));
                 }
-                else if (lang is "math" or "latex" or "chem" or "chemistry" or "equation")
+                else if (langClean is "math" or "latex" or "chem" or "chemistry" or "equation")
                 {
                     doc.Blocks.Add(BuildEquationBlock(blockContent, isDarkTheme));
                 }
+                else if (langClean is "json" or "")
+                {
+                    // Auto-detect whether this JSON block is a chart, cards, diagram, or metrics specification:
+                    if (TryBuildAutoDetectedJsonBlock(blockContent, palette, isDarkTheme, onOpenLink, out Block? autoBlock))
+                    {
+                        doc.Blocks.Add(autoBlock!);
+                    }
+                    else
+                    {
+                        doc.Blocks.Add(BuildCodeBlock(lang ?? "", blockContent, palette));
+                    }
+                }
                 else
                 {
-                    doc.Blocks.Add(BuildCodeBlock(lang, blockContent, palette));
+                    doc.Blocks.Add(BuildCodeBlock(lang ?? "", blockContent, palette));
                 }
 
                 continue;
@@ -478,17 +492,50 @@ public static partial class MarkdownFlowRenderer
         {
             using var doc = JsonDocument.Parse(spec, new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip });
             var root = doc.RootElement;
-            string? title = root.TryGetProperty("title", out var tp) ? tp.GetString() : null;
-            int columns = root.TryGetProperty("columns", out var cp) && cp.TryGetInt32(out int cVal)
-                ? Math.Clamp(cVal, 1, 3)
-                : 2;
+            string? sectionTitle = null;
+            int columns = 2;
+            var cardElements = new List<JsonElement>();
+
+            if (root.ValueKind == JsonValueKind.Array)
+            {
+                // Root is directly an array of cards: [ {...}, {...} ]
+                cardElements.AddRange(root.EnumerateArray());
+                columns = Math.Clamp(cardElements.Count switch { 1 => 1, 2 => 2, 3 => 3, _ => 2 }, 1, 3);
+            }
+            else if (root.ValueKind == JsonValueKind.Object)
+            {
+                if (TryGetArrayProperty(root, out var cardsArr, "cards", "grid", "items", "list"))
+                {
+                    cardElements.AddRange(cardsArr.EnumerateArray());
+                    sectionTitle = GetFirstStringProperty(root, "title", "header", "name", "heading");
+                    if (TryGetPropertyCaseInsensitive(root, out var cp, "columns", "cols") && cp.TryGetInt32(out int cVal))
+                    {
+                        columns = Math.Clamp(cVal, 1, 3);
+                    }
+                    else
+                    {
+                        columns = Math.Clamp(cardElements.Count switch { 1 => 1, 2 => 2, 3 => 3, _ => 2 }, 1, 3);
+                    }
+                }
+                else
+                {
+                    // Root is a single card object: { "title": "...", "body": "..." }
+                    cardElements.Add(root);
+                    columns = 1;
+                }
+            }
+
+            if (cardElements.Count == 0)
+            {
+                return BuildCodeBlock("cards", spec, palette);
+            }
 
             var outer = new StackPanel();
-            if (!string.IsNullOrWhiteSpace(title))
+            if (!string.IsNullOrWhiteSpace(sectionTitle))
             {
                 outer.Children.Add(new TextBlock
                 {
-                    Text = title,
+                    Text = sectionTitle,
                     FontSize = 13.5,
                     FontWeight = FontWeights.SemiBold,
                     Foreground = palette.TextBrush,
@@ -497,15 +544,18 @@ public static partial class MarkdownFlowRenderer
             }
 
             var grid = new System.Windows.Controls.Primitives.UniformGrid { Columns = columns };
-            if (root.TryGetProperty("cards", out var cardsArr) && cardsArr.ValueKind == JsonValueKind.Array)
+            foreach (var card in cardElements)
             {
-                foreach (var card in cardsArr.EnumerateArray())
-                {
-                    string cardTitle = card.TryGetProperty("title", out var ct) ? ct.GetString() ?? "" : "";
-                    string badge = card.TryGetProperty("badge", out var cb) ? cb.GetString() ?? "" : "";
-                    Brush accent = ParseHexBrush(card.TryGetProperty("color", out var cc) ? cc.GetString() : null, palette.AccentBrush);
+                if (card.ValueKind != JsonValueKind.Object) continue;
 
-                    var cardStack = new StackPanel();
+                string cardTitle = GetFirstStringProperty(card, "title", "header", "name", "heading") ?? "";
+                string badge = GetFirstStringProperty(card, "badge", "tag", "category", "label") ?? "";
+                string? colorHex = GetFirstStringProperty(card, "color", "accent", "accentColor");
+                Brush accent = ParseHexBrush(colorHex, palette.AccentBrush);
+
+                var cardStack = new StackPanel();
+                if (!string.IsNullOrWhiteSpace(cardTitle) || !string.IsNullOrWhiteSpace(badge))
+                {
                     var header = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
                     if (!string.IsNullOrWhiteSpace(badge))
                     {
@@ -528,39 +578,51 @@ public static partial class MarkdownFlowRenderer
                         header.Children.Add(pill);
                     }
 
-                    header.Children.Add(new TextBlock
+                    if (!string.IsNullOrWhiteSpace(cardTitle))
                     {
-                        Text = cardTitle,
-                        FontSize = 12.5,
-                        FontWeight = FontWeights.SemiBold,
-                        Foreground = palette.TextBrush,
-                        TextWrapping = TextWrapping.Wrap
-                    });
-                    cardStack.Children.Add(header);
-
-                    if (card.TryGetProperty("items", out var itemsArr) && itemsArr.ValueKind == JsonValueKind.Array)
-                    {
-                        foreach (var item in itemsArr.EnumerateArray())
+                        header.Children.Add(new TextBlock
                         {
-                            string itemText = item.GetString() ?? string.Empty;
-                            if (string.IsNullOrWhiteSpace(itemText))
-                            {
-                                continue;
-                            }
-
-                            var tb = new TextBlock
-                            {
-                                FontSize = 11.8,
-                                Foreground = palette.TextBrush,
-                                TextWrapping = TextWrapping.Wrap,
-                                Margin = new Thickness(0, 1.5, 0, 1.5)
-                            };
-                            tb.Inlines.Add(new Run("• ") { Foreground = accent, FontWeight = FontWeights.Bold });
-                            AppendInlines(tb.Inlines, itemText, palette, isDarkTheme, onOpenLink);
-                            cardStack.Children.Add(tb);
-                        }
+                            Text = cardTitle,
+                            FontSize = 12.5,
+                            FontWeight = FontWeights.SemiBold,
+                            Foreground = palette.TextBrush,
+                            TextWrapping = TextWrapping.Wrap
+                        });
                     }
-                    else if (card.TryGetProperty("body", out var bodyProp))
+
+                    cardStack.Children.Add(header);
+                }
+
+                // Check for items/points/bullets/list
+                bool hasItems = false;
+                if (TryGetArrayProperty(card, out var itemsArr, "items", "points", "bullets", "list", "features"))
+                {
+                    foreach (var item in itemsArr.EnumerateArray())
+                    {
+                        string itemText = item.ValueKind == JsonValueKind.String
+                            ? (item.GetString() ?? "")
+                            : item.ToString();
+
+                        if (string.IsNullOrWhiteSpace(itemText)) continue;
+                        hasItems = true;
+
+                        var tb = new TextBlock
+                        {
+                            FontSize = 11.8,
+                            Foreground = palette.TextBrush,
+                            TextWrapping = TextWrapping.Wrap,
+                            Margin = new Thickness(0, 1.5, 0, 1.5)
+                        };
+                        tb.Inlines.Add(new Run("• ") { Foreground = accent, FontWeight = FontWeights.Bold });
+                        AppendInlines(tb.Inlines, itemText, palette, isDarkTheme, onOpenLink);
+                        cardStack.Children.Add(tb);
+                    }
+                }
+
+                if (!hasItems)
+                {
+                    string? bodyText = GetFirstStringProperty(card, "body", "content", "description", "text", "details", "summary");
+                    if (!string.IsNullOrWhiteSpace(bodyText))
                     {
                         var tb = new TextBlock
                         {
@@ -568,28 +630,28 @@ public static partial class MarkdownFlowRenderer
                             Foreground = palette.TextBrush,
                             TextWrapping = TextWrapping.Wrap
                         };
-                        AppendInlines(tb.Inlines, bodyProp.GetString() ?? "", palette, isDarkTheme, onOpenLink);
+                        AppendInlines(tb.Inlines, bodyText, palette, isDarkTheme, onOpenLink);
                         cardStack.Children.Add(tb);
                     }
-
-                    var cardBorder = new Border
-                    {
-                        Background = palette.SubtleSurfaceBrush,
-                        BorderBrush = palette.BorderBrush,
-                        BorderThickness = new Thickness(1),
-                        CornerRadius = new CornerRadius(8),
-                        Margin = new Thickness(0, 0, 8, 8),
-                        Padding = new Thickness(10, 8, 10, 8),
-                        Child = new Border
-                        {
-                            BorderBrush = accent,
-                            BorderThickness = new Thickness(3, 0, 0, 0),
-                            Padding = new Thickness(8, 0, 0, 0),
-                            Child = cardStack
-                        }
-                    };
-                    grid.Children.Add(cardBorder);
                 }
+
+                var cardBorder = new Border
+                {
+                    Background = palette.SubtleSurfaceBrush,
+                    BorderBrush = palette.BorderBrush,
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(8),
+                    Margin = new Thickness(0, 0, 8, 8),
+                    Padding = new Thickness(10, 8, 10, 8),
+                    Child = new Border
+                    {
+                        BorderBrush = accent,
+                        BorderThickness = new Thickness(3, 0, 0, 0),
+                        Padding = new Thickness(8, 0, 0, 0),
+                        Child = cardStack
+                    }
+                };
+                grid.Children.Add(cardBorder);
             }
 
             outer.Children.Add(grid);
@@ -904,46 +966,235 @@ public static partial class MarkdownFlowRenderer
         using var doc = JsonDocument.Parse(spec, new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip });
         var root = doc.RootElement;
 
-        string typeRaw = root.TryGetProperty("type", out var tp) ? (tp.GetString() ?? "bar").ToLowerInvariant() : "bar";
-        string title = root.TryGetProperty("title", out var tl) ? (tl.GetString() ?? "Chart") : "Chart";
-        string xLabel = root.TryGetProperty("xLabel", out var xl) ? (xl.GetString() ?? "") : "";
-        string yLabel = root.TryGetProperty("yLabel", out var yl) ? (yl.GetString() ?? "") : "";
+        string typeRaw = (GetFirstStringProperty(root, "type", "chartType", "kind") ?? "bar").ToLowerInvariant();
+        string title = GetFirstStringProperty(root, "title", "header", "name") ?? "Chart";
+        string xLabel = GetFirstStringProperty(root, "xLabel", "xlabel", "xAxis", "x_axis") ?? "";
+        string yLabel = GetFirstStringProperty(root, "yLabel", "ylabel", "yAxis", "y_axis") ?? "";
 
-        if (typeRaw is "function" or "functionplot" or "graph")
+        if (typeRaw is "function" or "functionplot" or "graph" ||
+            (typeRaw is "plot" && (root.TryGetProperty("expr", out _) || root.TryGetProperty("expression", out _))))
         {
-            string expr = root.TryGetProperty("expr", out var ex) ? (ex.GetString() ?? "x") :
-                          root.TryGetProperty("expression", out var ex2) ? (ex2.GetString() ?? "x") : "x";
-            double xMin = root.TryGetProperty("xMin", out var xminp) && xminp.TryGetDouble(out double xm1) ? xm1 : -10;
-            double xMax = root.TryGetProperty("xMax", out var xmaxp) && xmaxp.TryGetDouble(out double xm2) ? xm2 : 10;
-            double yMin = root.TryGetProperty("yMin", out var yminp) && yminp.TryGetDouble(out double ym1) ? ym1 : -5;
-            double yMax = root.TryGetProperty("yMax", out var ymaxp) && ymaxp.TryGetDouble(out double ym2) ? ym2 : 5;
+            string expr = GetFirstStringProperty(root, "expr", "expression", "formula", "fn") ?? "x";
+            double xMin = TryGetPropertyCaseInsensitive(root, out var xminp, "xMin", "xmin") ? ParseDoubleFlexibly(xminp, -10) : -10;
+            double xMax = TryGetPropertyCaseInsensitive(root, out var xmaxp, "xMax", "xmax") ? ParseDoubleFlexibly(xmaxp, 10) : 10;
+            double yMin = TryGetPropertyCaseInsensitive(root, out var yminp, "yMin", "ymin") ? ParseDoubleFlexibly(yminp, -5) : -5;
+            double yMax = TryGetPropertyCaseInsensitive(root, out var ymaxp, "yMax", "ymax") ? ParseDoubleFlexibly(ymaxp, 5) : 5;
             return ChartRenderer.RenderFunctionGraph(expr, title, xMin, xMax, yMin, yMax, 560, 330);
         }
 
         var chartType = typeRaw switch
         {
-            "line" => StudyChartType.Line,
-            "pie" => StudyChartType.Pie,
-            "scatter" => StudyChartType.Scatter,
+            "line" or "linechart" or "line-chart" or "trend" or "timeseries" => StudyChartType.Line,
+            "pie" or "piechart" or "pie-chart" or "donut" or "doughnut" => StudyChartType.Pie,
+            "scatter" or "scatterplot" or "xy" => StudyChartType.Scatter,
             _ => StudyChartType.Bar
         };
 
         var points = new List<ChartDataPoint>();
-        if (root.TryGetProperty("data", out var dataArr) && dataArr.ValueKind == JsonValueKind.Array)
+        bool hasData = TryGetPropertyCaseInsensitive(root, out var dataProp, "data", "points", "values", "items", "series");
+        if (hasData)
         {
-            int idx = 0;
-            foreach (var item in dataArr.EnumerateArray())
+            if (dataProp.ValueKind == JsonValueKind.Array)
             {
-                idx++;
-                string label = item.TryGetProperty("label", out var lb) ? (lb.GetString() ?? $"Item {idx}") : $"Item {idx}";
-                double val = item.TryGetProperty("value", out var vp) && vp.TryGetDouble(out double v) ? v :
-                             item.TryGetProperty("y", out var yp) && yp.TryGetDouble(out double yv) ? yv : 0;
-                double xVal = item.TryGetProperty("x", out var xp) && xp.TryGetDouble(out double xv) ? xv : idx;
-                points.Add(new ChartDataPoint { Label = label, Value = val, XValue = xVal });
+                int idx = 0;
+                foreach (var item in dataProp.EnumerateArray())
+                {
+                    idx++;
+                    if (item.ValueKind == JsonValueKind.Object)
+                    {
+                        string label = GetFirstStringProperty(item, "label", "name", "x", "key", "title", "category") ?? $"Item {idx}";
+                        double val = 0;
+                        if (TryGetPropertyCaseInsensitive(item, out var valProp, "value", "val", "y", "count", "amount", "score", "v"))
+                        {
+                            val = ParseDoubleFlexibly(valProp, 0);
+                        }
+                        double xVal = idx;
+                        if (TryGetPropertyCaseInsensitive(item, out var xProp, "x", "xval", "xValue", "index"))
+                        {
+                            xVal = ParseDoubleFlexibly(xProp, idx);
+                        }
+                        points.Add(new ChartDataPoint { Label = label, Value = val, XValue = xVal });
+                    }
+                    else if (item.ValueKind is JsonValueKind.Number or JsonValueKind.String)
+                    {
+                        double val = ParseDoubleFlexibly(item, 0);
+                        points.Add(new ChartDataPoint { Label = $"Item {idx}", Value = val, XValue = idx });
+                    }
+                }
+            }
+            else if (dataProp.ValueKind == JsonValueKind.Object)
+            {
+                int idx = 0;
+                foreach (var prop in dataProp.EnumerateObject())
+                {
+                    idx++;
+                    double val = ParseDoubleFlexibly(prop.Value, 0);
+                    points.Add(new ChartDataPoint { Label = prop.Name, Value = val, XValue = idx });
+                }
             }
         }
 
         return ChartRenderer.RenderDataChart(chartType, title, xLabel, yLabel, points, 560, 330);
+    }
+
+    private static bool TryBuildAutoDetectedJsonBlock(
+        string content,
+        ThemePalette palette,
+        bool isDarkTheme,
+        Action<string>? onOpenLink,
+        out Block? resultBlock)
+    {
+        resultBlock = null;
+        string trimmed = content.Trim();
+        if (!trimmed.StartsWith('{') && !trimmed.StartsWith('['))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(trimmed, new JsonDocumentOptions { AllowTrailingCommas = true, CommentHandling = JsonCommentHandling.Skip });
+            var root = doc.RootElement;
+
+            // 1. Chart detection:
+            // Check if root has "type" (bar/line/pie/etc) and ("data" or "points" or "expr" or "expression")
+            if (root.ValueKind == JsonValueKind.Object)
+            {
+                if (root.TryGetProperty("type", out var typeProp) &&
+                    (root.TryGetProperty("data", out _) || root.TryGetProperty("points", out _) ||
+                     root.TryGetProperty("expr", out _) || root.TryGetProperty("expression", out _) ||
+                     root.TryGetProperty("values", out _)))
+                {
+                    string t = (typeProp.GetString() ?? "").ToLowerInvariant();
+                    if (t is "bar" or "column" or "line" or "pie" or "donut" or "scatter" or "function" or "graph" or "plot" ||
+                        t.Contains("chart"))
+                    {
+                        resultBlock = BuildChartBlock(trimmed, palette, isDarkTheme);
+                        return true;
+                    }
+                }
+            }
+
+            // 2. Cards detection:
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("cards", out var cArr) && cArr.ValueKind == JsonValueKind.Array)
+            {
+                resultBlock = BuildCardsBlock(trimmed, palette, isDarkTheme, onOpenLink);
+                return true;
+            }
+
+            if (root.ValueKind == JsonValueKind.Array)
+            {
+                var first = root.EnumerateArray().FirstOrDefault();
+                if (first.ValueKind == JsonValueKind.Object)
+                {
+                    bool hasCardMarkers = (first.TryGetProperty("title", out _) || first.TryGetProperty("header", out _) || first.TryGetProperty("name", out _)) &&
+                                          (first.TryGetProperty("items", out _) || first.TryGetProperty("points", out _) || first.TryGetProperty("body", out _) || first.TryGetProperty("content", out _));
+                    if (hasCardMarkers)
+                    {
+                        resultBlock = BuildCardsBlock(trimmed, palette, isDarkTheme, onOpenLink);
+                        return true;
+                    }
+
+                    // Metrics detection: array of { "label": ..., "value": ... }
+                    bool hasMetricMarkers = first.TryGetProperty("label", out _) && first.TryGetProperty("value", out _);
+                    if (hasMetricMarkers)
+                    {
+                        resultBlock = BuildMetricsBlock(trimmed, palette);
+                        return true;
+                    }
+                }
+            }
+
+            // 3. Diagram detection:
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("steps", out var stepsArr) && stepsArr.ValueKind == JsonValueKind.Array)
+            {
+                resultBlock = BuildDiagramBlock(trimmed, palette);
+                return true;
+            }
+
+            // 4. Metrics detection (object with "metrics" array):
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("metrics", out var metArr) && metArr.ValueKind == JsonValueKind.Array)
+            {
+                resultBlock = BuildMetricsBlock(trimmed, palette);
+                return true;
+            }
+        }
+        catch
+        {
+            // Invalid JSON, fall through
+        }
+
+        return false;
+    }
+
+    private static bool TryGetPropertyCaseInsensitive(JsonElement element, out JsonElement value, params string[] propertyNames)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var name in propertyNames)
+            {
+                if (element.TryGetProperty(name, out value))
+                {
+                    return true;
+                }
+            }
+            foreach (var prop in element.EnumerateObject())
+            {
+                foreach (var name in propertyNames)
+                {
+                    if (string.Equals(prop.Name, name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        value = prop.Value;
+                        return true;
+                    }
+                }
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static string? GetFirstStringProperty(JsonElement element, params string[] propertyNames)
+    {
+        if (TryGetPropertyCaseInsensitive(element, out var prop, propertyNames))
+        {
+            if (prop.ValueKind == JsonValueKind.String)
+            {
+                return prop.GetString();
+            }
+            return prop.ToString();
+        }
+        return null;
+    }
+
+    private static bool TryGetArrayProperty(JsonElement element, out JsonElement arrayElement, params string[] propertyNames)
+    {
+        if (TryGetPropertyCaseInsensitive(element, out arrayElement, propertyNames) && arrayElement.ValueKind == JsonValueKind.Array)
+        {
+            return true;
+        }
+        return false;
+    }
+
+    private static double ParseDoubleFlexibly(JsonElement element, double fallback = 0.0)
+    {
+        if (element.ValueKind == JsonValueKind.Number && element.TryGetDouble(out double d))
+        {
+            return d;
+        }
+
+        if (element.ValueKind == JsonValueKind.String)
+        {
+            string s = element.GetString() ?? "";
+            s = s.Trim().Replace("%", "").Replace(",", "").Trim();
+            if (double.TryParse(s, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double parsed))
+            {
+                return parsed;
+            }
+        }
+
+        return fallback;
     }
 
     private static Block BuildCodeBlock(string lang, string code, ThemePalette palette)

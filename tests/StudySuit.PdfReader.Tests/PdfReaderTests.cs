@@ -2801,6 +2801,53 @@ public sealed class PdfReaderTests : IDisposable
     }
 
     [Fact]
+    public async Task ExtractTextWithOcr_UserTouchCircle_GrazingQuestion19_DropsQuestion19()
+    {
+        string ncertPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "StudySuit.PdfReader", "library", "ncert", "jesc1", "jesc101.pdf");
+
+        if (!File.Exists(ncertPath)) return;
+
+        var docInfo = new PdfDocumentInfo
+        {
+            FileName = "jesc101.pdf",
+            FilePath = ncertPath,
+            PageCount = 16,
+            PageSizes = [new PdfPageSize(612, 820.8)]
+        };
+        var tabVm = new DocumentTabViewModel(docInfo, _pdfService);
+
+        // User's freehand touch circle around Question 20 whose top arc grazes into Line 19 (Y=0.365):
+        var poly = new List<NormalizedPoint>
+        {
+            new(0.14, 0.368),
+            new(0.35, 0.365),
+            new(0.60, 0.368),
+            new(0.65, 0.390),
+            new(0.60, 0.415),
+            new(0.35, 0.418),
+            new(0.14, 0.415),
+            new(0.12, 0.390),
+            new(0.14, 0.368)
+        };
+        var normRect = new NormalizedRect(0.12, 0.365, 0.53, 0.053);
+
+        var ocr = new WindowsOcrService();
+        if (!ocr.IsSupported) return;
+
+        var rendered = await _pdfService.RenderPageAsync(ncertPath, 16, 200, 0);
+        string text = await tabVm.ExtractTextWithOcrAsync(16, normRect, ocr, rendered, poly);
+
+        Assert.NotEmpty(text);
+        Assert.DoesNotContain("nitrogen", text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("flushed", text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("food items", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("terms", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Corrosion", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ExtractTextWithOcr_NcErtPage16_Question12_TwoLinesOcrTest()
     {
         string ncertPath = Path.Combine(
@@ -2962,20 +3009,144 @@ public sealed class PdfReaderTests : IDisposable
     }
 
     [Fact]
-    public async Task Debug_Slices_Ocr()
+    public async Task ScanlineMaskedBitmap_TouchGrazingCircle_RemovesNitrogenPixels()
     {
+        string ncertPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "StudySuit.PdfReader", "library", "ncert", "jesc1", "jesc101.pdf");
+        if (!File.Exists(ncertPath)) return;
+
         var ocr = new WindowsOcrService();
         if (!ocr.IsSupported) return;
 
-        string scratchDir = @"C:\Users\SURYA\.gemini\antigravity\brain\d218edce-7961-4978-918b-55ddf267c5d1\scratch";
-        var lines = new List<string>();
-        foreach (var file in Directory.GetFiles(scratchDir, "slice_*.png"))
+        var bmp = await _pdfService.RenderPageAsync(ncertPath, 16, 200, 0);
+
+        var poly = new List<NormalizedPoint>
         {
-            var bmp = new BitmapImage(new Uri(file));
-            string t = await ocr.RecognizeTextFromBitmapAsync(bmp);
-            lines.Add($"{Path.GetFileName(file)}: [{t}]");
-        }
-        File.WriteAllLines(Path.Combine(scratchDir, "slices_ocr.txt"), lines);
+            new(0.14, 0.368),
+            new(0.35, 0.365),
+            new(0.60, 0.368),
+            new(0.65, 0.390),
+            new(0.60, 0.415),
+            new(0.35, 0.418),
+            new(0.14, 0.415),
+            new(0.12, 0.390),
+            new(0.14, 0.368)
+        };
+
+        var maskedBmp = DocumentTabViewModel.CreateScanlineMaskedBitmap(bmp, poly, out int px, out int py);
+        string ocrResult = await ocr.RecognizeTextFromBitmapAsync(maskedBmp);
+
+        Assert.NotEmpty(ocrResult);
+        Assert.DoesNotContain("nitrogen", ocrResult, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("flushed", ocrResult, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void MarkdownRenderer_RendersCardsBlock_FlexibleSchemas()
+    {
+        Exception? threadEx = null;
+        var sta = new Thread(() =>
+        {
+            try
+            {
+                // 1. Standard cards spec
+                string md1 = "```cards\n{\"title\":\"Features\",\"columns\":2,\"cards\":[{\"title\":\"Card 1\",\"badge\":\"A\",\"items\":[\"Point 1\",\"Point 2\"]}]}\n```";
+                var doc1 = MarkdownFlowRenderer.RenderToFlowDocument(md1, false);
+                Assert.NotNull(doc1);
+                Assert.NotEmpty(doc1.Blocks);
+
+                // 2. Singular ```card block
+                string md2 = "```card\n{\"title\":\"Single Card\",\"badge\":\"Note\",\"body\":\"This is a single card description.\"}\n```";
+                var doc2 = MarkdownFlowRenderer.RenderToFlowDocument(md2, false);
+                Assert.NotNull(doc2);
+                Assert.NotEmpty(doc2.Blocks);
+
+                // 3. Root array of cards [ {...}, {...} ]
+                string md3 = "```cards\n[{\"title\":\"Alpha\",\"items\":[\"Item 1\"]},{\"title\":\"Beta\",\"items\":[\"Item 2\"]}]\n```";
+                var doc3 = MarkdownFlowRenderer.RenderToFlowDocument(md3, false);
+                Assert.NotNull(doc3);
+                Assert.NotEmpty(doc3.Blocks);
+
+                // 4. Auto-detect inside ```json block
+                string md4 = "```json\n{\"cards\":[{\"title\":\"Detected Card\",\"badge\":\"Smart\",\"items\":[\"Auto-detected in json block\"]}]}\n```";
+                var doc4 = MarkdownFlowRenderer.RenderToFlowDocument(md4, false);
+                Assert.NotNull(doc4);
+                Assert.NotEmpty(doc4.Blocks);
+            }
+            catch (Exception ex)
+            {
+                threadEx = ex;
+            }
+        });
+        sta.SetApartmentState(ApartmentState.STA);
+        sta.Start();
+        sta.Join();
+
+        Assert.Null(threadEx);
+    }
+
+    [Fact]
+    public void MarkdownRenderer_RendersChartBlock_FlexibleDataAndAliases()
+    {
+        Exception? threadEx = null;
+        var sta = new Thread(() =>
+        {
+            try
+            {
+                // 1. Bar chart with string numbers ("45.5", "80%")
+                string md1 = "```chart\n{\"type\":\"bar\",\"title\":\"Test Chart\",\"data\":[{\"label\":\"A\",\"value\":\"45.5\"},{\"label\":\"B\",\"value\":\"80%\"}]}\n```";
+                var doc1 = MarkdownFlowRenderer.RenderToFlowDocument(md1, false);
+                Assert.NotNull(doc1);
+                Assert.NotEmpty(doc1.Blocks);
+
+                // 2. Key-value dictionary data: { "Gas": 78 }
+                string md2 = "```chart\n{\"type\":\"pie\",\"title\":\"Atmosphere\",\"data\":{\"Nitrogen\":78,\"Oxygen\":21,\"Other\":1}}\n```";
+                var doc2 = MarkdownFlowRenderer.RenderToFlowDocument(md2, false);
+                Assert.NotNull(doc2);
+                Assert.NotEmpty(doc2.Blocks);
+
+                // 3. Alias: ```bar-chart
+                string md3 = "```bar-chart\n{\"title\":\"Alias Chart\",\"data\":[{\"label\":\"X\",\"value\":10},{\"label\":\"Y\",\"value\":20}]}\n```";
+                var doc3 = MarkdownFlowRenderer.RenderToFlowDocument(md3, false);
+                Assert.NotNull(doc3);
+                Assert.NotEmpty(doc3.Blocks);
+
+                // 4. Auto-detect chart inside ```json block
+                string md4 = "```json\n{\"type\":\"line\",\"title\":\"Line Graph\",\"data\":[{\"x\":1,\"y\":10},{\"x\":2,\"y\":25}]}\n```";
+                var doc4 = MarkdownFlowRenderer.RenderToFlowDocument(md4, false);
+                Assert.NotNull(doc4);
+                Assert.NotEmpty(doc4.Blocks);
+
+                // 5. Mathematical function curve
+                string md5 = "```chart\n{\"type\":\"function\",\"title\":\"Cosine\",\"expression\":\"cos(x)\",\"xMin\":-3.14,\"xMax\":3.14}\n```";
+                var doc5 = MarkdownFlowRenderer.RenderToFlowDocument(md5, false);
+                Assert.NotNull(doc5);
+                Assert.NotEmpty(doc5.Blocks);
+            }
+            catch (Exception ex)
+            {
+                threadEx = ex;
+            }
+        });
+        sta.SetApartmentState(ApartmentState.STA);
+        sta.Start();
+        sta.Join();
+
+        Assert.Null(threadEx);
+    }
+
+    [Fact]
+    public void AiChatService_SystemPrompt_EnforcesCardsAndCharts()
+    {
+        var settings = new AiAssistantSettings();
+        string prompt = AiChatService.BuildEffectiveSystemPrompt(settings);
+
+        Assert.Contains("[VISUAL CARDS & DATA CHARTS USAGE (MANDATORY)]", prompt);
+        Assert.Contains("```cards", prompt);
+        Assert.Contains("```chart", prompt);
+        Assert.Contains("Corrosion", prompt);
+        Assert.Contains("Atmospheric Composition", prompt);
     }
 }
 

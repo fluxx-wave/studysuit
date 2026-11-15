@@ -1264,7 +1264,24 @@ public sealed class AiChatService : IAiChatService
             $"   • Embed the authentic image into your response on its own line using standard Markdown image syntax: `![Descriptive Caption](https://example.com/image.jpg)`.\n" +
             $"   • ONLY embed real, direct HTTPS image URLs (e.g. ending in `.jpg`, `.jpeg`, `.png`, `.webp`, `.svg`, or authentic media URLs from Wikimedia Commons/Wikipedia). NEVER invent or hallucinate fake broken image URLs.\n" +
             $"   • Accompany the image with a brief clear caption explaining the visual concept.\n" +
-            $"   • If the user does NOT explicitly ask for an image, do NOT include random internet images; provide clear conceptual explanations and structured charts.");
+            $"   • If the user does NOT explicitly ask for an image, do NOT include random internet images; provide clear conceptual explanations and structured charts.\n\n" +
+            $"[VISUAL CARDS & DATA CHARTS USAGE (MANDATORY)]:\n" +
+            $"1. VISUAL CARDS GRID (`cards` block):\n" +
+            $"   • Whenever summarizing points, categories, definitions, features, advantages/disadvantages, or comparing topics, ALWAYS use the `cards` block instead of plain bullet walls!\n" +
+            $"   • Format as ```cards block with JSON schema:\n" +
+            $"     ```cards\n" +
+            $"     {{\"title\":\"Key Concepts\",\"columns\":2,\"cards\":[{{\"title\":\"Corrosion\",\"badge\":\"Chemical\",\"color\":\"#EF4444\",\"items\":[\"Slow destruction of metals by chemical action\",\"Example: Rusting of iron ($Fe_2O_3 \\cdot xH_2O$)\"]}},{{\"title\":\"Rancidity\",\"badge\":\"Oxidation\",\"color\":\"#F59E0B\",\"items\":[\"Oxidation of fats & oils leading to bad smell/taste\",\"Flushing with nitrogen prevents rancidity\"]}}]}}\n" +
+            $"     ```\n" +
+            $"2. INTERACTIVE CHARTS (`chart` block):\n" +
+            $"   • Whenever presenting quantitative statistics, percentages, numerical comparisons, or trends, ALWAYS generate an interactive `chart` block:\n" +
+            $"   • Format as ```chart block with JSON schema (`bar`, `line`, `pie`, `scatter`):\n" +
+            $"     ```chart\n" +
+            $"     {{\"type\":\"bar\",\"title\":\"Atmospheric Composition\",\"xLabel\":\"Gas\",\"yLabel\":\"Percentage (%)\",\"data\":[{{\"label\":\"Nitrogen\",\"value\":78.08}},{{\"label\":\"Oxygen\",\"value\":20.95}},{{\"label\":\"Argon\",\"value\":0.93}},{{\"label\":\"CO2\",\"value\":0.04}}]}}\n" +
+            $"     ```\n" +
+            $"   • Mathematical Function Curves (`function`):\n" +
+            $"     ```chart\n" +
+            $"     {{\"type\":\"function\",\"title\":\"Sine Wave\",\"expression\":\"sin(x)\",\"xMin\":-6.28,\"xMax\":6.28,\"yMin\":-1.5,\"yMax\":1.5}}\n" +
+            $"     ```");
 
         string personaPrompt = settings.PersonaPreset == AiPersonaPresetKind.Custom || !string.IsNullOrWhiteSpace(settings.SystemPrompt)
             ? settings.SystemPrompt.Trim()
