@@ -43,6 +43,7 @@ public partial class MainWindow : FluentWindow
     private Point _latestDragPoint;
     private AnnotationTool _activeDragTool;
     private bool _isPointerDragging;
+    private bool _isTouchInteractionActive;
     private bool _isWordPreviewBusy;
     private readonly List<Point> _inkCapturePoints = [];
     private readonly HashSet<int> _paintedWordIndices = [];
@@ -340,6 +341,7 @@ public partial class MainWindow : FluentWindow
         if (_isPointerDragging)
         {
             _isPointerDragging = false;
+            _isTouchInteractionActive = false;
             if (_activeSurface is not null)
             {
                 HideAllPreviewShapes(_activeSurface);
@@ -369,8 +371,9 @@ public partial class MainWindow : FluentWindow
 
         EnsurePageScrollViewer();
 
-        // If more than 1 finger is active and an annotation tool was dragging, abort the single-finger stroke
-        if (_isPointerDragging && (e.Manipulators.Count() >= 2 || Math.Abs(e.DeltaManipulation.Scale.Length - Math.Sqrt(2)) > 0.01))
+        // If 2 or more fingers are active (pinch-to-zoom or multi-touch pan) and an annotation tool was dragging,
+        // abort the single-finger stroke so the two-finger manipulation takes over cleanly.
+        if (_isPointerDragging && e.Manipulators.Count() >= 2)
         {
             AbortActivePointerInteraction();
         }
@@ -849,6 +852,141 @@ public partial class MainWindow : FluentWindow
         UpdateViewportMetrics();
     }
 
+    // ==================== TOUCH & STYLUS SIDEBAR RESIZING ====================
+    private bool _isResizingAiSidebarWithTouch;
+    private Point _aiSidebarTouchStartPos;
+    private double _aiSidebarTouchStartWidth;
+
+    private void AiSidebarSplitter_PreviewTouchDown(object sender, TouchEventArgs e)
+    {
+        _isResizingAiSidebarWithTouch = true;
+        _aiSidebarTouchStartPos = e.GetTouchPoint(this).Position;
+        _aiSidebarTouchStartWidth = AiSidebarColumn.ActualWidth > 0 ? AiSidebarColumn.ActualWidth : 420;
+        e.TouchDevice.Capture((UIElement)sender);
+        e.Handled = true;
+    }
+
+    private void AiSidebarSplitter_PreviewTouchMove(object sender, TouchEventArgs e)
+    {
+        if (!_isResizingAiSidebarWithTouch) return;
+        var current = e.GetTouchPoint(this).Position;
+        double deltaX = current.X - _aiSidebarTouchStartPos.X;
+        double newWidth = Math.Clamp(_aiSidebarTouchStartWidth - deltaX, 280, Math.Min(800, ActualWidth * 0.75));
+        AiSidebarColumn.Width = new GridLength(newWidth);
+        e.Handled = true;
+    }
+
+    private void AiSidebarSplitter_PreviewTouchUp(object sender, TouchEventArgs e)
+    {
+        if (_isResizingAiSidebarWithTouch)
+        {
+            _isResizingAiSidebarWithTouch = false;
+            if (sender is UIElement el) el.ReleaseTouchCapture(e.TouchDevice);
+            e.Handled = true;
+        }
+    }
+
+    private void AiSidebarSplitter_LostTouchCapture(object sender, TouchEventArgs e)
+    {
+        _isResizingAiSidebarWithTouch = false;
+    }
+
+    private void AiSidebarSplitter_PreviewStylusDown(object sender, StylusDownEventArgs e)
+    {
+        _isResizingAiSidebarWithTouch = true;
+        _aiSidebarTouchStartPos = e.GetPosition(this);
+        _aiSidebarTouchStartWidth = AiSidebarColumn.ActualWidth > 0 ? AiSidebarColumn.ActualWidth : 420;
+        e.StylusDevice.Capture((UIElement)sender);
+        e.Handled = true;
+    }
+
+    private void AiSidebarSplitter_PreviewStylusMove(object sender, StylusEventArgs e)
+    {
+        if (!_isResizingAiSidebarWithTouch) return;
+        var current = e.GetPosition(this);
+        double deltaX = current.X - _aiSidebarTouchStartPos.X;
+        double newWidth = Math.Clamp(_aiSidebarTouchStartWidth - deltaX, 280, Math.Min(800, ActualWidth * 0.75));
+        AiSidebarColumn.Width = new GridLength(newWidth);
+        e.Handled = true;
+    }
+
+    private void AiSidebarSplitter_PreviewStylusUp(object sender, StylusEventArgs e)
+    {
+        if (_isResizingAiSidebarWithTouch)
+        {
+            _isResizingAiSidebarWithTouch = false;
+            if (sender is UIElement el) el.ReleaseStylusCapture();
+            e.Handled = true;
+        }
+    }
+
+    private bool _isResizingLeftSidebarWithTouch;
+    private Point _leftSidebarTouchStartPos;
+    private double _leftSidebarTouchStartWidth;
+
+    private void LeftSidebarSplitter_PreviewTouchDown(object sender, TouchEventArgs e)
+    {
+        _isResizingLeftSidebarWithTouch = true;
+        _leftSidebarTouchStartPos = e.GetTouchPoint(this).Position;
+        _leftSidebarTouchStartWidth = LeftSidebarBorder.ActualWidth > 0 ? LeftSidebarBorder.ActualWidth : 280;
+        e.TouchDevice.Capture((UIElement)sender);
+        e.Handled = true;
+    }
+
+    private void LeftSidebarSplitter_PreviewTouchMove(object sender, TouchEventArgs e)
+    {
+        if (!_isResizingLeftSidebarWithTouch) return;
+        var current = e.GetTouchPoint(this).Position;
+        double deltaX = current.X - _leftSidebarTouchStartPos.X;
+        double newWidth = Math.Clamp(_leftSidebarTouchStartWidth + deltaX, 180, Math.Min(600, ActualWidth * 0.5));
+        LeftSidebarBorder.Width = newWidth;
+        e.Handled = true;
+    }
+
+    private void LeftSidebarSplitter_PreviewTouchUp(object sender, TouchEventArgs e)
+    {
+        if (_isResizingLeftSidebarWithTouch)
+        {
+            _isResizingLeftSidebarWithTouch = false;
+            if (sender is UIElement el) el.ReleaseTouchCapture(e.TouchDevice);
+            e.Handled = true;
+        }
+    }
+
+    private void LeftSidebarSplitter_LostTouchCapture(object sender, TouchEventArgs e)
+    {
+        _isResizingLeftSidebarWithTouch = false;
+    }
+
+    private void LeftSidebarSplitter_PreviewStylusDown(object sender, StylusDownEventArgs e)
+    {
+        _isResizingLeftSidebarWithTouch = true;
+        _leftSidebarTouchStartPos = e.GetPosition(this);
+        _leftSidebarTouchStartWidth = LeftSidebarBorder.ActualWidth > 0 ? LeftSidebarBorder.ActualWidth : 280;
+        e.StylusDevice.Capture((UIElement)sender);
+        e.Handled = true;
+    }
+
+    private void LeftSidebarSplitter_PreviewStylusMove(object sender, StylusEventArgs e)
+    {
+        if (!_isResizingLeftSidebarWithTouch) return;
+        var current = e.GetPosition(this);
+        double deltaX = current.X - _leftSidebarTouchStartPos.X;
+        double newWidth = Math.Clamp(_leftSidebarTouchStartWidth + deltaX, 180, Math.Min(600, ActualWidth * 0.5));
+        LeftSidebarBorder.Width = newWidth;
+        e.Handled = true;
+    }
+
+    private void LeftSidebarSplitter_PreviewStylusUp(object sender, StylusEventArgs e)
+    {
+        if (_isResizingLeftSidebarWithTouch)
+        {
+            _isResizingLeftSidebarWithTouch = false;
+            if (sender is UIElement el) el.ReleaseStylusCapture();
+            e.Handled = true;
+        }
+    }
+
     private void UpdateViewportMetrics()
     {
         if (_wiredTab is null || PdfPageList.ActualWidth <= 0 || PdfPageList.ActualHeight <= 0)
@@ -1301,6 +1439,13 @@ public partial class MainWindow : FluentWindow
 
     private void PageSurface_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        if (_isTouchInteractionActive)
+        {
+            // Promoted from Touch/Stylus contact; ignore to avoid dual interaction conflicts
+            e.Handled = true;
+            return;
+        }
+
         if (sender is not Grid surface || surface.DataContext is not PdfPageViewModel pageVm)
         {
             return;
@@ -1316,6 +1461,11 @@ public partial class MainWindow : FluentWindow
 
     private void PageSurface_MouseMove(object sender, MouseEventArgs e)
     {
+        if (_isTouchInteractionActive)
+        {
+            return;
+        }
+
         if (!_isPointerDragging && sender is Grid hoverSurface)
         {
             UpdateSurfaceAltCursor(hoverSurface);
@@ -1329,6 +1479,12 @@ public partial class MainWindow : FluentWindow
 
     private void PageSurface_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
+        if (_isTouchInteractionActive)
+        {
+            e.Handled = true;
+            return;
+        }
+
         if (_isPointerDragging && _activeSurface is not null)
         {
             var surface = _activeSurface;
@@ -1345,11 +1501,21 @@ public partial class MainWindow : FluentWindow
             return;
         }
 
-        // Multi-touch detection: if another touch is already active, this is pinch-to-zoom/pan gesture.
+        // Multi-touch detection: if multiple fingers are touching, this is pinch-to-zoom/pan gesture.
         // Abort single-finger drawing stroke so the multi-touch manipulation takes over smoothly.
-        if (_isPointerDragging || surface.TouchesCaptured.Count() > 0 || surface.TouchesOver.Count() > 1)
+        if (surface.TouchesOver.Count() > 1)
         {
             AbortActivePointerInteraction();
+            return;
+        }
+
+        // Single-finger touch: mark touch active
+        _isTouchInteractionActive = true;
+
+        if (_isPointerDragging)
+        {
+            // Already started via PreviewStylusDown for this stroke; avoid restarting or aborting
+            e.Handled = true;
             return;
         }
 
@@ -1390,6 +1556,14 @@ public partial class MainWindow : FluentWindow
             return;
         }
 
+        _isTouchInteractionActive = true;
+
+        if (_isPointerDragging)
+        {
+            e.Handled = true;
+            return;
+        }
+
         Point pos = e.GetPosition(surface);
         if (StartPointerInteraction(surface, pageVm, pos))
         {
@@ -1422,7 +1596,7 @@ public partial class MainWindow : FluentWindow
 
     private void PageSurface_LostMouseCapture(object sender, MouseEventArgs e)
     {
-        if (_isPointerDragging && _activeSurface is not null)
+        if (_isPointerDragging && !_isTouchInteractionActive && _activeSurface is not null)
         {
             FinishPointerInteraction(_latestDragPoint);
         }
@@ -1743,6 +1917,7 @@ public partial class MainWindow : FluentWindow
         Point endPoint = ClampToSurface(rawPos, surface);
 
         _isPointerDragging = false;
+        _isTouchInteractionActive = false;
         _activeSurface = null;
         _activeSurfacePage = null;
         HideAllPreviewShapes(surface);
@@ -2053,22 +2228,50 @@ public partial class MainWindow : FluentWindow
 
     private async void CircleAction_Explain_Click(object sender, RoutedEventArgs e)
     {
-        await ExecuteCircleAiQueryAsync("Explain this clearly with key takeaways, formulas, and concepts for my study preparation.");
+        try
+        {
+            await ExecuteCircleAiQueryAsync("Explain this clearly with key takeaways, formulas, and concepts for my study preparation.");
+        }
+        catch (Exception ex)
+        {
+            _viewModel.GlobalStatusText = $"Circle action error: {ex.Message}";
+        }
     }
 
     private async void CircleAction_Solve_Click(object sender, RoutedEventArgs e)
     {
-        await ExecuteCircleAiQueryAsync("Solve this step-by-step with clear derivations, mathematical formulas, and calculation steps.");
+        try
+        {
+            await ExecuteCircleAiQueryAsync("Solve this step-by-step with clear derivations, mathematical formulas, and calculation steps.");
+        }
+        catch (Exception ex)
+        {
+            _viewModel.GlobalStatusText = $"Circle action error: {ex.Message}";
+        }
     }
 
     private async void CircleAction_WebSearch_Click(object sender, RoutedEventArgs e)
     {
-        await ExecuteCircleAiQueryAsync("Search the web for up-to-date facts, current developments, and verified references regarding this topic.");
+        try
+        {
+            await ExecuteCircleAiQueryAsync("Search the web for up-to-date facts, current developments, and verified references regarding this topic.");
+        }
+        catch (Exception ex)
+        {
+            _viewModel.GlobalStatusText = $"Circle action error: {ex.Message}";
+        }
     }
 
     private async void CircleAction_Practice_Click(object sender, RoutedEventArgs e)
     {
-        await ExecuteCircleAiQueryAsync("Generate 2 exam practice questions (with answers and explanations) based directly on this topic.");
+        try
+        {
+            await ExecuteCircleAiQueryAsync("Generate 2 exam practice questions (with answers and explanations) based directly on this topic.");
+        }
+        catch (Exception ex)
+        {
+            _viewModel.GlobalStatusText = $"Circle action error: {ex.Message}";
+        }
     }
 
     private void CircleAction_Copy_Click(object sender, RoutedEventArgs e)
@@ -2087,13 +2290,20 @@ public partial class MainWindow : FluentWindow
 
     private async void CircleAction_CustomAsk_Click(object sender, RoutedEventArgs e)
     {
-        string custom = CircleToSearchCustomPromptBox.Text?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(custom))
+        try
         {
-            custom = "Explain this selection in detail.";
+            string custom = CircleToSearchCustomPromptBox.Text?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(custom))
+            {
+                custom = "Explain this selection in detail.";
+            }
+            CircleToSearchCustomPromptBox.Text = string.Empty;
+            await ExecuteCircleAiQueryAsync(custom);
         }
-        CircleToSearchCustomPromptBox.Text = string.Empty;
-        await ExecuteCircleAiQueryAsync(custom);
+        catch (Exception ex)
+        {
+            _viewModel.GlobalStatusText = $"Circle action error: {ex.Message}";
+        }
     }
 
     private void CircleToSearchCustomPromptBox_KeyDown(object sender, KeyEventArgs e)
@@ -2110,27 +2320,34 @@ public partial class MainWindow : FluentWindow
 
     private async Task ExecuteCircleAiQueryAsync(string userInstruction)
     {
-        CircleToSearchCard.Visibility = Visibility.Collapsed;
-        _viewModel.IsAiSidebarOpen = true;
-
-        string docTitle = _wiredTab?.DocumentInfo.Title ?? _wiredTab?.DocumentInfo.FileName ?? "Document";
-        string fullPrompt;
-        string sessionTitle;
-
-        if (!string.IsNullOrWhiteSpace(_circleSelectionText))
+        try
         {
-            string shortSnippet = _circleSelectionText.Trim().Replace('\r', ' ').Replace('\n', ' ');
-            if (shortSnippet.Length > 36) shortSnippet = shortSnippet[..33] + "…";
-            sessionTitle = $"🔍 {shortSnippet} (p.{_circleSelectionPageNumber})";
-            fullPrompt = $"[Circled on Page {_circleSelectionPageNumber} of '{docTitle}']:\n\"{_circleSelectionText}\"\n\n{userInstruction}";
-        }
-        else
-        {
-            sessionTitle = $"🔍 Page {_circleSelectionPageNumber} Diagram";
-            fullPrompt = $"[Circled diagram/region on Page {_circleSelectionPageNumber} of '{docTitle}']:\n{userInstruction}";
-        }
+            CircleToSearchCard.Visibility = Visibility.Collapsed;
+            _viewModel.IsAiSidebarOpen = true;
 
-        await _viewModel.AiAssistant.StartCircleToSearchSessionAsync(sessionTitle, fullPrompt);
+            string docTitle = _wiredTab?.DocumentInfo.Title ?? _wiredTab?.DocumentInfo.FileName ?? "Document";
+            string fullPrompt;
+            string sessionTitle;
+
+            if (!string.IsNullOrWhiteSpace(_circleSelectionText))
+            {
+                string shortSnippet = _circleSelectionText.Trim().Replace('\r', ' ').Replace('\n', ' ');
+                if (shortSnippet.Length > 36) shortSnippet = shortSnippet[..33] + "…";
+                sessionTitle = $"🔍 {shortSnippet} (p.{_circleSelectionPageNumber})";
+                fullPrompt = $"[Circled on Page {_circleSelectionPageNumber} of '{docTitle}']:\n\"{_circleSelectionText}\"\n\n{userInstruction}";
+            }
+            else
+            {
+                sessionTitle = $"🔍 Page {_circleSelectionPageNumber} Diagram";
+                fullPrompt = $"[Circled diagram/region on Page {_circleSelectionPageNumber} of '{docTitle}']:\n{userInstruction}";
+            }
+
+            await _viewModel.AiAssistant.StartCircleToSearchSessionAsync(sessionTitle, fullPrompt);
+        }
+        catch (Exception ex)
+        {
+            _viewModel.GlobalStatusText = $"Circle to Search query failed: {ex.Message}";
+        }
     }
 
     private void PrintButton_Click(object sender, RoutedEventArgs e)

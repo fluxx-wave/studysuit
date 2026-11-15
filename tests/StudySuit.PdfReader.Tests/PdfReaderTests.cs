@@ -2765,32 +2765,31 @@ public sealed class PdfReaderTests : IDisposable
         };
         var tabVm = new DocumentTabViewModel(docInfo, _pdfService);
 
-        // Polygon strictly circling question 20:
-        // Question 19 ends above Y=0.355.
-        // Question 20 starts at Y=0.358 to Y=0.425.
+        // Polygon strictly circling question 20 (with parts a and b):
+        // Question 19 is at Y=0.366 to 0.372.
+        // Question 20 starts at Y=0.380 and ends around Y=0.435.
         var polygon = new List<NormalizedPoint>
         {
-            new(0.08, 0.358),
-            new(0.85, 0.358),
-            new(0.85, 0.430),
-            new(0.08, 0.430)
+            new(0.08, 0.380),
+            new(0.85, 0.380),
+            new(0.85, 0.438),
+            new(0.08, 0.438)
         };
-        var normRect = new NormalizedRect(0.08, 0.358, 0.77, 0.072);
+        var normRect = new NormalizedRect(0.08, 0.380, 0.77, 0.058);
 
         var ocr = new WindowsOcrService();
         if (!ocr.IsSupported) return;
 
         var rendered = await _pdfService.RenderPageAsync(ncertPath, 16, 200, 0);
+        var pageWords = await _pdfService.GetPageWordsAsync(ncertPath, 16);
+        var q1920 = pageWords.Where(w => w.Bounds.Y >= 0.35 && w.Bounds.Y <= 0.43).ToList();
+        var q1920Debug = string.Join("\n", q1920.Select(w => $"'{w.Text}' Y={w.Bounds.Y:F4} H={w.Bounds.Height:F4} CenterY={w.Bounds.Y + w.Bounds.Height*0.5:F4} Inside={DocumentTabViewModel.IsPointInPolygon(new NormalizedPoint(w.Bounds.X + w.Bounds.Width*0.5, w.Bounds.Y + w.Bounds.Height*0.5), polygon)}"));
         string text = await tabVm.ExtractTextWithOcrAsync(16, normRect, ocr, rendered, polygon);
-
-        var words = await _pdfService.GetPageWordsAsync(ncertPath, 16);
-        var q12Words = words.Where(w => w.Bounds.Y >= 0.11 && w.Bounds.Y <= 0.16).ToList();
-        var q12Line = string.Join(" ", q12Words.Select(w => $"{w.Text}[Y={w.Bounds.Y:F3}]"));
 
         string scratchDir = @"C:\Users\SURYA\.gemini\antigravity\brain\d218edce-7961-4978-918b-55ddf267c5d1\scratch";
         Directory.CreateDirectory(scratchDir);
         File.WriteAllText(Path.Combine(scratchDir, "ocr_output.txt"), text);
-        File.WriteAllText(Path.Combine(scratchDir, "q12_words.txt"), q12Line);
+        File.WriteAllText(Path.Combine(scratchDir, "q1920_words.txt"), q1920Debug);
 
         Assert.NotEmpty(text);
         Assert.DoesNotContain("nitrogen", text, StringComparison.OrdinalIgnoreCase);
@@ -2815,26 +2814,26 @@ public sealed class PdfReaderTests : IDisposable
             FileName = "jesc101.pdf",
             FilePath = ncertPath,
             PageCount = 16,
-            PageSizes = [new PdfPageSize(612, 820.8)]
+            PageSizes = [new PdfPageSize(576, 784.8)]
         };
         var tabVm = new DocumentTabViewModel(docInfo, _pdfService);
 
-        // Circled around Question 12 (both lines: Y from ~0.088 to 0.132)
-        // Line 1: "12. Write one equation each for decomposition reactions where energy is supplied in" (Y ~ 0.090-0.110)
-        // Line 2: "the form of heat, light or electricity." (Y ~ 0.110-0.129)
+        // Circled around Question 12 (both lines: Y from ~0.110 to 0.155)
+        // Line 1: "12. Write one equation each for decomposition reactions where energy is supplied in" (Y ~ 0.122)
+        // Line 2: "the form of heat, light or electricity." (Y ~ 0.139)
         var poly = new List<NormalizedPoint>
         {
-            new(0.06, 0.088),
-            new(0.50, 0.086),
-            new(0.92, 0.088),
-            new(0.94, 0.110),
-            new(0.92, 0.132),
-            new(0.50, 0.134),
-            new(0.06, 0.132),
-            new(0.04, 0.110),
-            new(0.06, 0.088)
+            new(0.06, 0.110),
+            new(0.50, 0.108),
+            new(0.92, 0.110),
+            new(0.94, 0.132),
+            new(0.92, 0.155),
+            new(0.50, 0.157),
+            new(0.06, 0.155),
+            new(0.04, 0.132),
+            new(0.06, 0.110)
         };
-        var normRect = new NormalizedRect(0.04, 0.086, 0.90, 0.048);
+        var normRect = new NormalizedRect(0.04, 0.108, 0.90, 0.049);
 
         var ocr = new WindowsOcrService();
         if (!ocr.IsSupported) return;
@@ -2892,15 +2891,74 @@ public sealed class PdfReaderTests : IDisposable
     [Fact]
     public async Task WinOcr_Limits_Test()
     {
+        string ncertPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "StudySuit.PdfReader", "library", "ncert", "jesc1", "jesc101.pdf");
+        if (!File.Exists(ncertPath)) return;
+
         var ocr = new WindowsOcrService();
         if (!ocr.IsSupported) return;
 
-        var rtbSmall = new RenderTargetBitmap(300, 30, 96, 96, PixelFormats.Pbgra32);
-        string textSmall = await ocr.RecognizeTextFromBitmapAsync(rtbSmall);
-        var wordsSmall = await ocr.RecognizeWordsFromBitmapAsync(rtbSmall);
+        var rendered = await _pdfService.RenderPageAsync(ncertPath, 16, 200, 0);
 
+        // 1. Test Question 12 (two lines) with user's circle:
+        // The circle covers Question 12, but user's right curve is slightly lazy and doesn't reach the extreme margin:
+        var polyQ12 = new List<NormalizedPoint>
+        {
+            new(0.06, 0.110),
+            new(0.65, 0.110),
+            new(0.70, 0.130),
+            new(0.65, 0.155),
+            new(0.06, 0.155),
+            new(0.04, 0.130),
+            new(0.06, 0.110)
+        };
+        var normRect12 = new NormalizedRect(0.04, 0.110, 0.66, 0.045);
+
+        // 2. Test Question 20 where circle grazes Question 19 above:
+        // Top of circle enters Question 19 at X=0.20 to 0.70, bottom covers (a) Corrosion:
+        var polyQ20 = new List<NormalizedPoint>
+        {
+            new(0.20, 0.355), // in Q19
+            new(0.75, 0.355), // in Q19
+            new(0.80, 0.380),
+            new(0.75, 0.420), // under Corrosion
+            new(0.15, 0.420), // under Corrosion
+            new(0.12, 0.380), // beside Q20
+            new(0.20, 0.355)
+        };
+        var normRect20 = new NormalizedRect(0.12, 0.355, 0.68, 0.065);
+
+        var wordsPage16 = await _pdfService.GetPageWordsAsync(ncertPath, 16);
+
+        string q12Smart = DocumentTabViewModel.SmartFilterWordsInPolygon(wordsPage16, polyQ12, normRect12);
+        string q20Smart = DocumentTabViewModel.SmartFilterWordsInPolygon(wordsPage16, polyQ20, normRect20);
+
+        var q12DebugWords = wordsPage16.Where(w => w.Bounds.Y >= 0.10 && w.Bounds.Y <= 0.15).ToList();
         string scratchDir = @"C:\Users\SURYA\.gemini\antigravity\brain\d218edce-7961-4978-918b-55ddf267c5d1\scratch";
-        File.WriteAllText(Path.Combine(scratchDir, "small_ocr.txt"), $"textSmall: '{textSmall}', wordsSmall: {wordsSmall.Count}");
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("=== Q12 DEBUG WORDS ===");
+        foreach (var w in q12DebugWords)
+        {
+            sb.AppendLine($"'{w.Text}' X={w.Bounds.X:F3} Y={w.Bounds.Y:F3} W={w.Bounds.Width:F3} H={w.Bounds.Height:F3}");
+        }
+        sb.AppendLine("\n=== Q12 SMART RESULT ===");
+        sb.AppendLine(q12Smart);
+        sb.AppendLine("\n=== Q20 SMART RESULT ===");
+        sb.AppendLine(q20Smart);
+        File.WriteAllText(Path.Combine(scratchDir, "smart_filter_results.txt"), sb.ToString());
+
+        // Assert Q12 has both lines completely
+        Assert.Contains("decomposition", q12Smart);
+        Assert.Contains("reactions where energy is supplied in", q12Smart);
+        Assert.Contains("the form of heat, light or electricity", q12Smart);
+
+        // Assert Q20 has Question 20 and Corrosion, but NOT nitrogen/flushed from Question 19
+        Assert.DoesNotContain("nitrogen", q20Smart, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("flushed", q20Smart, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("food items", q20Smart, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Explain the following terms", q20Smart);
+        Assert.Contains("Corrosion", q20Smart);
     }
 
     [Fact]

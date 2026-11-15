@@ -16,6 +16,8 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
     private readonly IVoiceReadoutService _voiceReadoutService;
     private readonly IAiChatHistoryService _chatHistoryService;
     private readonly ILlamaCppAutoSetupService? _llamaService;
+    private readonly object _messagesLock = new();
+    private readonly object _sessionsLock = new();
     private CancellationTokenSource? _activeRequestCts;
     private CancellationTokenSource? _speechCts;
     private AiChatMessage? _speakingMessage;
@@ -92,6 +94,10 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
         _voiceReadoutService = voiceReadoutService ?? new VoiceReadoutService();
         _chatHistoryService = chatHistoryService ?? new AiChatHistoryService();
         _llamaService = llamaService;
+
+        System.Windows.Data.BindingOperations.EnableCollectionSynchronization(Messages, _messagesLock);
+        System.Windows.Data.BindingOperations.EnableCollectionSynchronization(AllSessions, _sessionsLock);
+        System.Windows.Data.BindingOperations.EnableCollectionSynchronization(FilteredSessions, _sessionsLock);
 
         _settings = _settingsService.Load();
         _useWebResearch = _settings.UseInternetByDefault;
@@ -460,23 +466,30 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
             return;
         }
 
-        if (Messages.Any(m => !m.IsWelcome && !m.IsError))
+        try
         {
-            await SaveCurrentSessionToHistoryAsync().ConfigureAwait(false);
+            if (Messages.Any(m => !m.IsWelcome && !m.IsError))
+            {
+                await SaveCurrentSessionToHistoryAsync();
+            }
+
+            CurrentSession = new AiChatSession
+            {
+                Title = sessionTitle
+            };
+
+            RunOnUi(() =>
+            {
+                Messages.Clear();
+                StatusText = $"Circle to Search: {sessionTitle}";
+            });
+
+            await SendQuickPromptAsync(prompt);
         }
-
-        CurrentSession = new AiChatSession
+        catch (Exception ex)
         {
-            Title = sessionTitle
-        };
-
-        RunOnUi(() =>
-        {
-            Messages.Clear();
-            StatusText = $"Circle to Search: {sessionTitle}";
-        });
-
-        await SendQuickPromptAsync(prompt);
+            RunOnUi(() => StatusText = $"Circle to Search: {ex.Message}");
+        }
     }
 
     [RelayCommand]
@@ -780,7 +793,7 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
         var dispatcher = Application.Current?.Dispatcher;
         if (dispatcher is not null && !dispatcher.CheckAccess())
         {
-            dispatcher.BeginInvoke(action);
+            dispatcher.Invoke(action);
         }
         else
         {

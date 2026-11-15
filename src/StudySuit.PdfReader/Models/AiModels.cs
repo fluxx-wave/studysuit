@@ -188,7 +188,8 @@ public sealed class AiAssistantSettings
         "CRITICAL GROUNDING RULE: Never generate fake facts, made-up statistics, or fabricated state rankings. " +
         "Always cite authentic official primary sources (e.g. NCRB, RBI, Census of India, PIB, NFHS). " +
         "When the user asks about the active document, use pdf_search or read_pdf_page and cite page numbers. " +
-        "Use web_search only when external or up-to-date facts are required, and cite sources as [n].";
+        "Use web_search only when external or up-to-date facts are required, and cite sources as [n]. " +
+        "When the user explicitly asks for an image, photo, or visual diagram from the internet, search for and provide authentic direct Markdown images `![Description](https://...)` from verified educational sources (e.g. Wikimedia Commons).";
 
     public const string DefaultResponseFormatPrompt =
         """
@@ -202,6 +203,9 @@ public sealed class AiAssistantSettings
              > [!IMPORTANT] Critical rule or exam point
              > [!WARNING] Common mistake to avoid
            - Use standard Markdown tables (`| Column A | Column B |`) for structured data.
+           - Direct Internet Images (ONLY WHEN EXPLICITLY REQUESTED):
+             `![Descriptive caption](https://upload.wikimedia.org/.../image.jpg)`
+             (Only embed direct verified HTTPS image links from Wikimedia Commons or official sources; never invent fake URLs).
 
         2. Math Equations (LaTeX):
            - Inline math: `$E = mc^2$` or `$\frac{dy}{dx}$`

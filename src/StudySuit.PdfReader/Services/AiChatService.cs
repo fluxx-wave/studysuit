@@ -1257,7 +1257,14 @@ public sealed class AiChatService : IAiChatService
             $"   • For health, literacy & population: Census of India, National Family Health Survey (NFHS), NITI Aayog SDG Index.\n" +
             $"   • For government schemes & policy: Press Information Bureau (PIB), Gazette of India, official ministry reports.\n" +
             $"3. STATISTICAL DISTINCTION — TOTAL VOLUME vs PER-CAPITA RATE:\n" +
-            $"   • When explaining state comparisons (e.g. crime or incidents), ALWAYS explain the vital academic distinction between Total Incidents (where populous states like Uttar Pradesh with 240M people have high absolute counts) versus Crime Rate per 1 Lakh Population (where Union Territories or high-registration states like Delhi or Kerala lead due to near-100% online FIR/e-FIR systems, strict crime registration policies, and high literacy).");
+            $"   • When explaining state comparisons (e.g. crime or incidents), ALWAYS explain the vital academic distinction between Total Incidents (where populous states like Uttar Pradesh with 240M people have high absolute counts) versus Crime Rate per 1 Lakh Population (where Union Territories or high-registration states like Delhi or Kerala lead due to near-100% online FIR/e-FIR systems, strict crime registration policies, and high literacy).\n\n" +
+            $"[INTERNET IMAGES & VISUAL REFERENCE INSTRUCTION (MANDATORY)]:\n" +
+            $"1. IF THE USER EXPLICITLY ASKS FOR AN IMAGE, PHOTO, PICTURE, OR DIAGRAM FROM THE INTERNET (e.g. 'show me an image/photo of...', 'picture dikhao', 'photo provide karo', 'image do', 'diagram ke sath batao', 'include photo/image'):\n" +
+            $"   • Use `web_search` to find authentic high-resolution educational, encyclopedic, or official image links (e.g. from Wikimedia Commons, Wikipedia, NASA, ISRO, NCBI, or official government portals).\n" +
+            $"   • Embed the authentic image into your response on its own line using standard Markdown image syntax: `![Descriptive Caption](https://example.com/image.jpg)`.\n" +
+            $"   • ONLY embed real, direct HTTPS image URLs (e.g. ending in `.jpg`, `.jpeg`, `.png`, `.webp`, `.svg`, or authentic media URLs from Wikimedia Commons/Wikipedia). NEVER invent or hallucinate fake broken image URLs.\n" +
+            $"   • Accompany the image with a brief clear caption explaining the visual concept.\n" +
+            $"   • If the user does NOT explicitly ask for an image, do NOT include random internet images; provide clear conceptual explanations and structured charts.");
 
         string personaPrompt = settings.PersonaPreset == AiPersonaPresetKind.Custom || !string.IsNullOrWhiteSpace(settings.SystemPrompt)
             ? settings.SystemPrompt.Trim()

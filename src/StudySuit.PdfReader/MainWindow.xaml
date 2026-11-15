@@ -1645,8 +1645,11 @@
                 </Grid.ColumnDefinitions>
 
                 <!-- Left Collapsible Sidebar (4 Tabs: Pages, Outline, Search, Notes) -->
-                <Border Grid.Column="0"
+                <Border x:Name="LeftSidebarBorder"
+                        Grid.Column="0"
                         Width="280"
+                        MinWidth="200"
+                        MaxWidth="600"
                         BorderThickness="0,0,1,0"
                         BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
                         Background="{DynamicResource LayerFillColorDefaultBrush}">
@@ -1948,12 +1951,35 @@
                     </TabControl>
                 </Border>
 
-                <!-- Resizable Splitter -->
-                <GridSplitter Grid.Column="1"
-                              Width="4"
+                <!-- Resizable Left Splitter with Touch & Stylus Drag Handles -->
+                <GridSplitter x:Name="LeftSidebarSplitter"
+                              Grid.Column="1"
+                              Width="18"
+                              Margin="-9,0,-9,0"
                               HorizontalAlignment="Center"
                               VerticalAlignment="Stretch"
-                              Background="Transparent">
+                              Background="Transparent"
+                              Cursor="SizeWE"
+                              PreviewTouchDown="LeftSidebarSplitter_PreviewTouchDown"
+                              PreviewTouchMove="LeftSidebarSplitter_PreviewTouchMove"
+                              PreviewTouchUp="LeftSidebarSplitter_PreviewTouchUp"
+                              LostTouchCapture="LeftSidebarSplitter_LostTouchCapture"
+                              PreviewStylusDown="LeftSidebarSplitter_PreviewStylusDown"
+                              PreviewStylusMove="LeftSidebarSplitter_PreviewStylusMove"
+                              PreviewStylusUp="LeftSidebarSplitter_PreviewStylusUp">
+                    <GridSplitter.Template>
+                        <ControlTemplate TargetType="GridSplitter">
+                            <Grid Background="Transparent">
+                                <Border Width="3.5"
+                                        Height="54"
+                                        CornerRadius="2"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"
+                                        Background="{DynamicResource ControlStrokeColorDefaultBrush}"
+                                        Opacity="0.45" />
+                            </Grid>
+                        </ControlTemplate>
+                    </GridSplitter.Template>
                     <GridSplitter.Style>
                         <Style TargetType="GridSplitter">
                             <Setter Property="Visibility" Value="Collapsed" />
@@ -3854,13 +3880,37 @@
             </Grid>
             </Grid>
 
-            <!-- Right Splitter -->
-            <GridSplitter Grid.Column="1"
-                          Width="4"
+            <!-- Right Splitter for AI Sidebar with Touch & Stylus Drag Handles -->
+            <GridSplitter x:Name="AiSidebarSplitter"
+                          Grid.Column="1"
+                          Width="18"
+                          Margin="-9,0,-9,0"
                           HorizontalAlignment="Center"
                           VerticalAlignment="Stretch"
                           Background="Transparent"
-                          Visibility="{Binding ShowAiSidebar, Converter={StaticResource BoolToVis}}" />
+                          Cursor="SizeWE"
+                          PreviewTouchDown="AiSidebarSplitter_PreviewTouchDown"
+                          PreviewTouchMove="AiSidebarSplitter_PreviewTouchMove"
+                          PreviewTouchUp="AiSidebarSplitter_PreviewTouchUp"
+                          LostTouchCapture="AiSidebarSplitter_LostTouchCapture"
+                          PreviewStylusDown="AiSidebarSplitter_PreviewStylusDown"
+                          PreviewStylusMove="AiSidebarSplitter_PreviewStylusMove"
+                          PreviewStylusUp="AiSidebarSplitter_PreviewStylusUp"
+                          Visibility="{Binding ShowAiSidebar, Converter={StaticResource BoolToVis}}">
+                <GridSplitter.Template>
+                    <ControlTemplate TargetType="GridSplitter">
+                        <Grid Background="Transparent">
+                            <Border Width="3.5"
+                                    Height="54"
+                                    CornerRadius="2"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Background="{DynamicResource ControlStrokeColorDefaultBrush}"
+                                    Opacity="0.45" />
+                        </Grid>
+                    </ControlTemplate>
+                </GridSplitter.Template>
+            </GridSplitter>
 
             <!-- RIGHT COLLAPSIBLE AI ASSISTANT SIDEBAR -->
             <Border x:Name="AiSidebarBorder"

@@ -18,7 +18,14 @@ namespace StudySuit.PdfReader.Services;
 /// </summary>
 public static partial class MarkdownFlowRenderer
 {
-    private static readonly HttpClient ImageHttpClient = new() { Timeout = TimeSpan.FromSeconds(10) };
+    private static readonly HttpClient ImageHttpClient = CreateImageHttpClient();
+
+    private static HttpClient CreateImageHttpClient()
+    {
+        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) StudySuitPdfReader/1.0");
+        return client;
+    }
 
     public static FlowDocument RenderToFlowDocument(
         string markdown,

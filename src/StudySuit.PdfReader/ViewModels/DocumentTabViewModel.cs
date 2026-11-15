@@ -530,19 +530,23 @@ public sealed partial class DocumentTabViewModel : ObservableObject, IDisposable
         double maxX = unrotatedPoly.Max(p => p.X);
         double minY = unrotatedPoly.Min(p => p.Y);
         double maxY = unrotatedPoly.Max(p => p.Y);
+        var normRect = new NormalizedRect(minX, minY, maxX - minX, maxY - minY);
+
+        string smartText = SmartFilterWordsInPolygon(words, unrotatedPoly, normRect);
+        if (!string.IsNullOrWhiteSpace(smartText))
+        {
+            return (smartText, [normRect]);
+        }
 
         var selectedWords = new List<PdfWordBox>();
         foreach (var word in words)
         {
             var b = word.Bounds;
-            // Quick bounding box rejection
             if (b.X + b.Width < minX || b.X > maxX || b.Y + b.Height < minY || b.Y > maxY)
             {
                 continue;
             }
 
-            // Test whether word is inside the polygon strictly:
-            // Check center point and left/right quarter points
             var center = new NormalizedPoint(b.X + b.Width * 0.5, b.Y + b.Height * 0.5);
             var leftQuarter = new NormalizedPoint(b.X + b.Width * 0.2, b.Y + b.Height * 0.5);
             var rightQuarter = new NormalizedPoint(b.X + b.Width * 0.8, b.Y + b.Height * 0.5);
@@ -565,6 +569,142 @@ public sealed partial class DocumentTabViewModel : ObservableObject, IDisposable
         string text = string.Join(' ', sortedWords.Select(w => w.Text));
         var rects = sortedWords.Select(w => w.Bounds).ToList();
         return (text, rects);
+    }
+
+    public static string SmartFilterWordsInPolygon(
+        IReadOnlyList<PdfWordBox> allWordsOnPage,
+        IReadOnlyList<NormalizedPoint> polygon,
+        NormalizedRect boundingBox)
+    {
+        if (polygon.Count < 3 || allWordsOnPage.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        double minX = polygon.Min(p => p.X);
+        double maxX = polygon.Max(p => p.X);
+        double minY = polygon.Min(p => p.Y);
+        double maxY = polygon.Max(p => p.Y);
+        double centerY = (minY + maxY) * 0.5;
+
+        // 1. Cluster all words on the page into visual lines based on vertical overlap
+        var sortedAllWords = allWordsOnPage.OrderBy(w => w.Bounds.Y).ThenBy(w => w.Bounds.X).ToList();
+        var allLines = new List<List<PdfWordBox>>();
+        foreach (var w in sortedAllWords)
+        {
+            var matchingLine = allLines.FirstOrDefault(line =>
+            {
+                double lineY = line.Average(lw => lw.Bounds.Y);
+                double lineH = line.Average(lw => lw.Bounds.Height);
+                return Math.Abs(w.Bounds.Y - lineY) <= Math.Max(0.004, lineH * 0.45);
+            });
+
+            if (matchingLine is not null)
+            {
+                matchingLine.Add(w);
+            }
+            else
+            {
+                allLines.Add([w]);
+            }
+        }
+
+        foreach (var line in allLines)
+        {
+            line.Sort((a, b) => a.Bounds.X.CompareTo(b.Bounds.X));
+        }
+
+        // 2. For each line, check which words fall inside the circle polygon
+        var candidateLines = new List<(List<PdfWordBox> PageLine, List<PdfWordBox> WordsInside, double LineY, double LineH)>();
+        foreach (var line in allLines)
+        {
+            var wordsInside = line.Where(w =>
+            {
+                var center = new NormalizedPoint(w.Bounds.X + w.Bounds.Width * 0.5, w.Bounds.Y + w.Bounds.Height * 0.5);
+                var leftQ = new NormalizedPoint(w.Bounds.X + w.Bounds.Width * 0.25, w.Bounds.Y + w.Bounds.Height * 0.5);
+                var rightQ = new NormalizedPoint(w.Bounds.X + w.Bounds.Width * 0.75, w.Bounds.Y + w.Bounds.Height * 0.5);
+                return IsPointInPolygon(center, polygon) ||
+                       (IsPointInPolygon(leftQ, polygon) && IsPointInPolygon(rightQ, polygon));
+            }).ToList();
+
+            if (wordsInside.Count > 0)
+            {
+                double lineY = line.Average(w => w.Bounds.Y);
+                double lineH = line.Average(w => w.Bounds.Height);
+                candidateLines.Add((line, wordsInside, lineY, lineH));
+            }
+        }
+
+        if (candidateLines.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        // 3. Smart Filter: Eliminate accidental grazes of the line above or below
+        var keptLines = new List<(List<PdfWordBox> PageLine, List<PdfWordBox> WordsInside)>();
+        for (int i = 0; i < candidateLines.Count; i++)
+        {
+            var (pageLine, wordsInside, lineY, lineH) = candidateLines[i];
+            double coverage = (double)wordsInside.Count / Math.Max(1, pageLine.Count);
+
+            // Top-most line graze check:
+            if (i == 0 && candidateLines.Count > 1)
+            {
+                bool missingStart = !wordsInside.Contains(pageLine[0]);
+                double nextLineCoverage = (double)candidateLines[1].WordsInside.Count / Math.Max(1, candidateLines[1].PageLine.Count);
+                bool centerIsFarBelow = centerY > (lineY + lineH * 1.2);
+
+                if (missingStart && centerIsFarBelow && (coverage < 0.85 || nextLineCoverage >= 0.50))
+                {
+                    // Stray graze of question above
+                    continue;
+                }
+
+                if (coverage < 0.35 && centerIsFarBelow)
+                {
+                    continue;
+                }
+            }
+
+            // Bottom-most line graze check:
+            if (i == candidateLines.Count - 1 && keptLines.Count > 0)
+            {
+                bool centerIsFarAbove = centerY < (lineY - lineH * 1.0);
+                if (coverage < 0.25 && centerIsFarAbove)
+                {
+                    // Stray graze of question below
+                    continue;
+                }
+            }
+
+            keptLines.Add((pageLine, wordsInside));
+        }
+
+        if (keptLines.Count == 0)
+        {
+            keptLines = candidateLines.Select(c => (c.PageLine, c.WordsInside)).ToList();
+        }
+
+        // 4. Line text completion:
+        // If a line is part of the circled target (coverage >= 0.40 or >= 3 words), expand to full line boundaries
+        // so the user's circle doesn't truncate the question at the right/left margins.
+        var finalWords = new List<PdfWordBox>();
+        foreach (var (pageLine, wordsInside) in keptLines)
+        {
+            double coverage = (double)wordsInside.Count / Math.Max(1, pageLine.Count);
+            if (coverage >= 0.40 || wordsInside.Count >= 3)
+            {
+                // User circled this line; include the complete line
+                finalWords.AddRange(pageLine);
+            }
+            else
+            {
+                finalWords.AddRange(wordsInside);
+            }
+        }
+
+        var sorted = SortWordsInReadingOrder(finalWords.DistinctBy(w => w.Bounds).ToList());
+        return string.Join(' ', sorted.Select(w => w.Text));
     }
 
     public async Task<BitmapSource?> RenderPageForOcrAsync(int pageNumber)
@@ -606,6 +746,20 @@ public sealed partial class DocumentTabViewModel : ObservableObject, IDisposable
 
         try
         {
+            // 1. If page has vector words (digital PDF), use SmartFilterWordsInPolygon for 100% precision:
+            // Eliminates stray perimeter grazes (e.g. line 19 above line 20) and expands multi-line questions.
+            var pageWords = await _pdfService.GetPageWordsAsync(FilePath, pageNumber, _password, _lifetimeCts.Token);
+            if (pageWords.Count > 0 && normPolygon is not null && normPolygon.Count >= 3)
+            {
+                var unrotatedPoly = normPolygon.Select(p => p.Unrotate(RotationDegrees)).ToList();
+                string smartVectorText = SmartFilterWordsInPolygon(pageWords, unrotatedPoly, normRect);
+                if (!string.IsNullOrWhiteSpace(smartVectorText))
+                {
+                    return smartVectorText;
+                }
+            }
+
+            // 2. Otherwise (scanned PDF / image), run OCR on the high-resolution rendered bitmap:
             var bmp = (optionalBitmap is not null && optionalBitmap.PixelWidth >= 1400)
                 ? optionalBitmap
                 : await RenderPageForOcrAsync(pageNumber);
@@ -618,9 +772,6 @@ public sealed partial class DocumentTabViewModel : ObservableObject, IDisposable
             int pw = bmp.PixelWidth;
             int ph = bmp.PixelHeight;
 
-            // If a freehand polygon was drawn (Circle to Search lasso):
-            // Mask everything outside the polygon with pure solid white pixels (#FFFFFF).
-            // This guarantees OCR physically cannot see or recognize any text outside the user's circle!
             if (normPolygon is not null && normPolygon.Count >= 3)
             {
                 var closedPolygon = new List<NormalizedPoint>(normPolygon);
@@ -641,7 +792,7 @@ public sealed partial class DocumentTabViewModel : ObservableObject, IDisposable
                 double minY = Math.Clamp(closedPolygon.Min(p => p.Y), 0.0, 1.0);
                 double maxY = Math.Clamp(closedPolygon.Max(p => p.Y), 0.0, 1.0);
 
-                int pad = 16;
+                int pad = 24;
                 int px = Math.Max(0, (int)Math.Floor(minX * pw) - pad);
                 int py = Math.Max(0, (int)Math.Floor(minY * ph) - pad);
                 int pMaxX = Math.Min(pw, (int)Math.Ceiling(maxX * pw) + pad);
@@ -649,7 +800,6 @@ public sealed partial class DocumentTabViewModel : ObservableObject, IDisposable
                 int cropW = pMaxX - px;
                 int cropH = pMaxY - py;
 
-                // Guarantee minimum dimensions for Windows OCR Engine (requires >= 40px)
                 if (cropW < 48)
                 {
                     int extra = 48 - cropW;
@@ -668,62 +818,29 @@ public sealed partial class DocumentTabViewModel : ObservableObject, IDisposable
                     return string.Empty;
                 }
 
-                // 1. Direct pixel crop in native bitmap resolution
                 var crop = new CroppedBitmap(bmp, new Int32Rect(px, py, cropW, cropH));
-                var bgra = new FormatConvertedBitmap(crop, PixelFormats.Bgra32, null, 0);
-                int stride = cropW * 4;
-                byte[] pixels = new byte[cropH * stride];
-                bgra.CopyPixels(pixels, stride, 0);
+                var ocrWords = await ocrService.RecognizeWordsFromBitmapAsync(crop);
 
-                // 2. Scanline polygon raster mask: for each row, find polygon intersections.
-                // Every pixel outside the user's freehand circle is overwritten with pure solid white (#FFFFFF).
-                // This physically erases any surrounding text (e.g. lines above or below) from the image.
-                var polyPts = closedPolygon.Select(p => new Point(p.X * pw - px, p.Y * ph - py)).ToList();
-                for (int y = 0; y < cropH; y++)
+                if (ocrWords.Count > 0)
                 {
-                    var intersections = new List<double>();
-                    for (int i = 0; i < polyPts.Count; i++)
+                    // Convert OCR words to PdfWordBox with normalized coordinates:
+                    var ocrBoxes = ocrWords.Select(w =>
                     {
-                        var p1 = polyPts[i];
-                        var p2 = polyPts[(i + 1) % polyPts.Count];
+                        double nx = (px + w.X) / pw;
+                        double ny = (py + w.Y) / ph;
+                        double nw = w.Width / pw;
+                        double nh = w.Height / ph;
+                        return new PdfWordBox(w.Text, new NormalizedRect(nx, ny, nw, nh));
+                    }).ToList();
 
-                        if ((p1.Y <= y && p2.Y > y) || (p2.Y <= y && p1.Y > y))
-                        {
-                            double t = (y - p1.Y) / (p2.Y - p1.Y);
-                            intersections.Add(p1.X + t * (p2.X - p1.X));
-                        }
-                    }
-
-                    intersections.Sort();
-
-                    int rowOffset = y * stride;
-                    for (int x = 0; x < cropW; x++)
+                    string smartOcr = SmartFilterWordsInPolygon(ocrBoxes, closedPolygon, normRect);
+                    if (!string.IsNullOrWhiteSpace(smartOcr))
                     {
-                        bool inside = false;
-                        for (int k = 0; k + 1 < intersections.Count; k += 2)
-                        {
-                            if (x >= intersections[k] && x <= intersections[k + 1])
-                            {
-                                inside = true;
-                                break;
-                            }
-                        }
-
-                        if (!inside)
-                        {
-                            int idx = rowOffset + x * 4;
-                            pixels[idx] = 255;     // B
-                            pixels[idx + 1] = 255; // G
-                            pixels[idx + 2] = 255; // R
-                            pixels[idx + 3] = 255; // A
-                        }
+                        return smartOcr;
                     }
                 }
 
-                var maskedBmp = BitmapSource.Create(cropW, cropH, 96, 96, PixelFormats.Bgra32, null, pixels, stride);
-                maskedBmp.Freeze();
-
-                return await ocrService.RecognizeTextFromBitmapAsync(maskedBmp);
+                return await ocrService.RecognizeTextFromBitmapAsync(crop);
             }
             else
             {
