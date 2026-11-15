@@ -80,7 +80,12 @@
                     BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
                     Background="{DynamicResource LayerFillColorDefaultBrush}"
                     Padding="16">
-                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Auto"
+                              PanningMode="Both"
+                              PanningDeceleration="0.001"
+                              PanningRatio="1.0"
+                              IsManipulationEnabled="True">
                     <Image x:Name="PreviewImage"
                            Stretch="None"
                            HorizontalAlignment="Center"

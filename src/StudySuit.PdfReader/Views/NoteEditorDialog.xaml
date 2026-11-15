@@ -41,6 +41,10 @@
                      AcceptsReturn="True"
                      TextWrapping="Wrap"
                      VerticalScrollBarVisibility="Auto"
+                     ScrollViewer.PanningMode="VerticalOnly"
+                     ScrollViewer.PanningDeceleration="0.001"
+                     ScrollViewer.PanningRatio="1.0"
+                     IsManipulationEnabled="True"
                      Padding="10"
                      FontSize="13.5"
                      VerticalContentAlignment="Top" />

@@ -24,11 +24,23 @@ public sealed class SmoothScrollController : IDisposable
         _targetVertical = scrollViewer.VerticalOffset;
         _targetHorizontal = scrollViewer.HorizontalOffset;
 
-        // If the user clicks or drags the scrollbar thumb/track directly, sync immediately
+        // If the user clicks, touches, or begins touch manipulation directly, sync immediately
         _scrollViewer.PreviewMouseDown += OnScrollViewerPreviewMouseDown;
+        _scrollViewer.PreviewTouchDown += OnScrollViewerPreviewTouchDown;
+        _scrollViewer.ManipulationStarting += OnScrollViewerManipulationStarting;
     }
 
     private void OnScrollViewerPreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        SyncAndStop();
+    }
+
+    private void OnScrollViewerPreviewTouchDown(object? sender, TouchEventArgs e)
+    {
+        SyncAndStop();
+    }
+
+    private void OnScrollViewerManipulationStarting(object? sender, ManipulationStartingEventArgs e)
     {
         SyncAndStop();
     }
@@ -131,8 +143,9 @@ public sealed class SmoothScrollController : IDisposable
             return;
         }
 
-        // If user is holding left button down on scrollbar (dragging thumb), yield to native scroll
-        if (Mouse.LeftButton == MouseButtonState.Pressed && Mouse.Captured is not null)
+        // If user is holding left button down on scrollbar (dragging thumb) or actively touching/manipulating, yield to native scroll
+        if ((Mouse.LeftButton == MouseButtonState.Pressed && Mouse.Captured is not null) ||
+            _scrollViewer.AreAnyTouchesCaptured)
         {
             SyncAndStop();
             return;
@@ -181,5 +194,7 @@ public sealed class SmoothScrollController : IDisposable
         _disposed = true;
         StopAnimation();
         _scrollViewer.PreviewMouseDown -= OnScrollViewerPreviewMouseDown;
+        _scrollViewer.PreviewTouchDown -= OnScrollViewerPreviewTouchDown;
+        _scrollViewer.ManipulationStarting -= OnScrollViewerManipulationStarting;
     }
 }

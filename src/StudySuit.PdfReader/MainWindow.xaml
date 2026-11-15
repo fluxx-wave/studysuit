@@ -1022,7 +1022,12 @@
                     <TranslateTransform />
                 </Grid.RenderTransform>
 
-                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="28,20">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              PanningMode="Both"
+                              PanningDeceleration="0.001"
+                              PanningRatio="1.0"
+                              IsManipulationEnabled="True"
+                              Padding="28,20">
                     <StackPanel MaxWidth="1360" HorizontalAlignment="Stretch">
                         <!-- Dashboard Header -->
                         <DockPanel Margin="0,0,0,18">
@@ -1670,6 +1675,10 @@
                                      Background="Transparent"
                                      BorderThickness="0"
                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     ScrollViewer.PanningMode="VerticalOnly"
+                                     ScrollViewer.PanningDeceleration="0.001"
+                                     ScrollViewer.PanningRatio="1.0"
+                                     IsManipulationEnabled="True"
                                      VirtualizingPanel.IsVirtualizing="True"
                                      VirtualizingPanel.VirtualizationMode="Recycling"
                                      VirtualizingPanel.ScrollUnit="Pixel"
@@ -1748,6 +1757,10 @@
                                           Background="Transparent"
                                           BorderThickness="0"
                                           Padding="6"
+                                          ScrollViewer.PanningMode="Both"
+                                          ScrollViewer.PanningDeceleration="0.001"
+                                          ScrollViewer.PanningRatio="1.0"
+                                          IsManipulationEnabled="True"
                                           SelectedItemChanged="BookmarkTree_SelectedItemChanged"
                                           Visibility="{Binding HasBookmarks, Converter={StaticResource BoolToVis}}">
                                     <TreeView.ItemTemplate>
@@ -1807,6 +1820,10 @@
                                          Background="Transparent"
                                          BorderThickness="0"
                                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ScrollViewer.PanningMode="VerticalOnly"
+                                         ScrollViewer.PanningDeceleration="0.001"
+                                         ScrollViewer.PanningRatio="1.0"
+                                         IsManipulationEnabled="True"
                                          SelectionChanged="SearchResultsList_SelectionChanged">
                                     <ListBox.ItemTemplate>
                                         <DataTemplate DataType="{x:Type models:SearchMatch}">
@@ -1856,6 +1873,10 @@
                                          Background="Transparent"
                                          BorderThickness="0"
                                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ScrollViewer.PanningMode="VerticalOnly"
+                                         ScrollViewer.PanningDeceleration="0.001"
+                                         ScrollViewer.PanningRatio="1.0"
+                                         IsManipulationEnabled="True"
                                          SelectionChanged="AnnotationsList_SelectionChanged"
                                          Visibility="{Binding HasAnnotations, Converter={StaticResource BoolToVis}}">
                                     <ListBox.ItemContainerStyle>
@@ -1962,6 +1983,10 @@
                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
                              ScrollViewer.VerticalScrollBarVisibility="Auto"
                              ScrollViewer.CanContentScroll="True"
+                             ScrollViewer.PanningMode="Both"
+                             ScrollViewer.PanningDeceleration="0.001"
+                             ScrollViewer.PanningRatio="1.0"
+                             IsManipulationEnabled="True"
                              VirtualizingPanel.IsVirtualizing="True"
                              VirtualizingPanel.VirtualizationMode="Recycling"
                              VirtualizingPanel.CacheLength="2"
@@ -1973,10 +1998,28 @@
                              PreviewMouseWheel="PdfPageList_PreviewMouseWheel">
                         <ListBox.Style>
                             <Style TargetType="ListBox">
-                                <Setter Property="ScrollViewer.PanningMode" Value="None" />
+                                <Setter Property="ScrollViewer.PanningMode" Value="Both" />
+                                <Setter Property="ScrollViewer.PanningDeceleration" Value="0.001" />
+                                <Setter Property="ScrollViewer.PanningRatio" Value="1.0" />
+                                <Setter Property="IsManipulationEnabled" Value="True" />
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding SelectedTab.ActiveTool}" Value="Pan">
-                                        <Setter Property="ScrollViewer.PanningMode" Value="Both" />
+                                    <DataTrigger Binding="{Binding SelectedTab.ActiveTool}" Value="{x:Static models:AnnotationTool.Ink}">
+                                        <Setter Property="ScrollViewer.PanningMode" Value="None" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding SelectedTab.ActiveTool}" Value="{x:Static models:AnnotationTool.Brush}">
+                                        <Setter Property="ScrollViewer.PanningMode" Value="None" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding SelectedTab.ActiveTool}" Value="{x:Static models:AnnotationTool.CircleToSearch}">
+                                        <Setter Property="ScrollViewer.PanningMode" Value="None" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding SelectedTab.ActiveTool}" Value="{x:Static models:AnnotationTool.Rectangle}">
+                                        <Setter Property="ScrollViewer.PanningMode" Value="None" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding SelectedTab.ActiveTool}" Value="{x:Static models:AnnotationTool.Ellipse}">
+                                        <Setter Property="ScrollViewer.PanningMode" Value="None" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding SelectedTab.ActiveTool}" Value="{x:Static models:AnnotationTool.Arrow}">
+                                        <Setter Property="ScrollViewer.PanningMode" Value="None" />
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
@@ -2362,7 +2405,11 @@
                                     Background="{DynamicResource SubtleFillColorSecondaryBrush}"
                                     Margin="0,0,0,10"
                                     MaxHeight="70">
-                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                              PanningMode="VerticalOnly"
+                                              PanningDeceleration="0.001"
+                                              PanningRatio="1.0"
+                                              IsManipulationEnabled="True">
                                     <TextBlock x:Name="CircleToSearchSnippetText"
                                                Text="Selected region on page"
                                                FontSize="12"
@@ -2585,7 +2632,11 @@
                                  SelectedItem="{Binding SelectedNote}"
                                  Background="Transparent"
                                  BorderThickness="0"
-                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                 ScrollViewer.PanningMode="VerticalOnly"
+                                 ScrollViewer.PanningDeceleration="0.001"
+                                 ScrollViewer.PanningRatio="1.0"
+                                 IsManipulationEnabled="True">
                             <ListBox.ItemContainerStyle>
                                 <Style TargetType="ListBoxItem">
                                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -2806,6 +2857,10 @@
                                      FontSize="15"
                                      AcceptsTab="True"
                                      VerticalScrollBarVisibility="Auto"
+                                     ScrollViewer.PanningMode="VerticalOnly"
+                                     ScrollViewer.PanningDeceleration="0.001"
+                                     ScrollViewer.PanningRatio="1.0"
+                                     IsManipulationEnabled="True"
                                      TextChanged="NoteRichEditor_TextChanged" />
                     </Border>
 
@@ -3013,6 +3068,10 @@
                     <ScrollViewer x:Name="NewsFeedScrollViewer"
                                   Grid.Row="2"
                                   VerticalScrollBarVisibility="Auto"
+                                  PanningMode="VerticalOnly"
+                                  PanningDeceleration="0.001"
+                                  PanningRatio="1.0"
+                                  IsManipulationEnabled="True"
                                   PreviewMouseWheel="NewsFeedScrollViewer_PreviewMouseWheel"
                                   Padding="24,14">
                         <Grid MaxWidth="1020">
@@ -3275,6 +3334,10 @@
                     <!-- Scrollable In-App Reader Canvas -->
                     <ScrollViewer Grid.Row="1"
                                   VerticalScrollBarVisibility="Auto"
+                                  PanningMode="VerticalOnly"
+                                  PanningDeceleration="0.001"
+                                  PanningRatio="1.0"
+                                  IsManipulationEnabled="True"
                                   Padding="32,24,32,48">
                         <StackPanel MaxWidth="840" HorizontalAlignment="Center">
                             <!-- Article Headline -->
@@ -3535,6 +3598,10 @@
             <ScrollViewer Grid.Row="2"
                           VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled"
+                          PanningMode="VerticalOnly"
+                          PanningDeceleration="0.001"
+                          PanningRatio="1.0"
+                          IsManipulationEnabled="True"
                           Padding="24,18">
                 <StackPanel>
                     <!-- Global Status / Notification Banner -->
@@ -3943,6 +4010,10 @@
                                       VerticalScrollBarVisibility="Auto"
                                       HorizontalScrollBarVisibility="Disabled"
                                       CanContentScroll="False"
+                                      PanningMode="VerticalOnly"
+                                      PanningDeceleration="0.001"
+                                      PanningRatio="1.0"
+                                      IsManipulationEnabled="True"
                                       PreviewMouseWheel="AiChatScrollViewer_PreviewMouseWheel"
                                       MouseWheel="AiChatScrollViewer_PreviewMouseWheel"
                                       Padding="12,10">
@@ -4228,6 +4299,10 @@
                             <ScrollViewer Grid.Row="2"
                                           VerticalScrollBarVisibility="Auto"
                                           HorizontalScrollBarVisibility="Disabled"
+                                          PanningMode="VerticalOnly"
+                                          PanningDeceleration="0.001"
+                                          PanningRatio="1.0"
+                                          IsManipulationEnabled="True"
                                           Padding="10,8">
                                 <StackPanel>
                                     <!-- Empty State -->

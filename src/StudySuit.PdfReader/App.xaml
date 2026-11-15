@@ -22,6 +22,14 @@
             <conv:EnumEqualConverter x:Key="EnumEqual" />
             <conv:StringEqualMultiConverter x:Key="StringEqualMulti" />
             <conv:PinIconConverter x:Key="PinIcon" />
+
+            <!-- Global Touch Screen Scrolling Support for All Controls -->
+            <Style TargetType="{x:Type ScrollViewer}" BasedOn="{StaticResource {x:Type ScrollViewer}}">
+                <Setter Property="PanningMode" Value="Both" />
+                <Setter Property="PanningDeceleration" Value="0.001" />
+                <Setter Property="PanningRatio" Value="1.0" />
+                <Setter Property="IsManipulationEnabled" Value="True" />
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>
