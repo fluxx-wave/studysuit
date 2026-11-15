@@ -572,7 +572,7 @@ public sealed partial class DocumentTabViewModel : ObservableObject, IDisposable
         try
         {
             var page = Pages.FirstOrDefault(p => p.PageNumber == pageNumber);
-            if (page?.RenderedImage is not null)
+            if (page?.RenderedImage is not null && page.RenderedImage.PixelWidth >= 1400)
             {
                 return page.RenderedImage;
             }
@@ -580,7 +580,7 @@ public sealed partial class DocumentTabViewModel : ObservableObject, IDisposable
             return await _pdfService.RenderPageAsync(
                 FilePath,
                 pageNumber,
-                dpi: 192,
+                dpi: 200,
                 rotationDegrees: RotationDegrees,
                 invertColors: false,
                 password: _password,
@@ -606,7 +606,10 @@ public sealed partial class DocumentTabViewModel : ObservableObject, IDisposable
 
         try
         {
-            var bmp = optionalBitmap ?? await RenderPageForOcrAsync(pageNumber);
+            var bmp = (optionalBitmap is not null && optionalBitmap.PixelWidth >= 1400)
+                ? optionalBitmap
+                : await RenderPageForOcrAsync(pageNumber);
+
             if (bmp is null || bmp.PixelWidth <= 0 || bmp.PixelHeight <= 0)
             {
                 return string.Empty;
@@ -616,114 +619,111 @@ public sealed partial class DocumentTabViewModel : ObservableObject, IDisposable
             int ph = bmp.PixelHeight;
 
             // If a freehand polygon was drawn (Circle to Search lasso):
-            // Mask everything outside the polygon with pure white pixels (#FFFFFF).
+            // Mask everything outside the polygon with pure solid white pixels (#FFFFFF).
             // This guarantees OCR physically cannot see or recognize any text outside the user's circle!
             if (normPolygon is not null && normPolygon.Count >= 3)
             {
-                double minX = Math.Clamp(normPolygon.Min(p => p.X), 0.0, 1.0);
-                double maxX = Math.Clamp(normPolygon.Max(p => p.X), 0.0, 1.0);
-                double minY = Math.Clamp(normPolygon.Min(p => p.Y), 0.0, 1.0);
-                double maxY = Math.Clamp(normPolygon.Max(p => p.Y), 0.0, 1.0);
+                var closedPolygon = new List<NormalizedPoint>(normPolygon);
+                if (closedPolygon.Count > 0)
+                {
+                    var p0 = closedPolygon[0];
+                    var pLast = closedPolygon[^1];
+                    double dX = pLast.X - p0.X;
+                    double dY = pLast.Y - p0.Y;
+                    if (Math.Sqrt(dX * dX + dY * dY) > 0.001)
+                    {
+                        closedPolygon.Add(new NormalizedPoint(p0.X, p0.Y));
+                    }
+                }
 
-                int px = (int)Math.Floor(minX * pw);
-                int py = (int)Math.Floor(minY * ph);
-                int cropW = (int)Math.Ceiling((maxX - minX) * pw);
-                int cropH = (int)Math.Ceiling((maxY - minY) * ph);
+                double minX = Math.Clamp(closedPolygon.Min(p => p.X), 0.0, 1.0);
+                double maxX = Math.Clamp(closedPolygon.Max(p => p.X), 0.0, 1.0);
+                double minY = Math.Clamp(closedPolygon.Min(p => p.Y), 0.0, 1.0);
+                double maxY = Math.Clamp(closedPolygon.Max(p => p.Y), 0.0, 1.0);
 
-                px = Math.Clamp(px, 0, pw - 1);
-                py = Math.Clamp(py, 0, ph - 1);
-                cropW = Math.Clamp(cropW, 1, pw - px);
-                cropH = Math.Clamp(cropH, 1, ph - py);
+                int pad = 16;
+                int px = Math.Max(0, (int)Math.Floor(minX * pw) - pad);
+                int py = Math.Max(0, (int)Math.Floor(minY * ph) - pad);
+                int pMaxX = Math.Min(pw, (int)Math.Ceiling(maxX * pw) + pad);
+                int pMaxY = Math.Min(ph, (int)Math.Ceiling(maxY * ph) + pad);
+                int cropW = pMaxX - px;
+                int cropH = pMaxY - py;
+
+                // Guarantee minimum dimensions for Windows OCR Engine (requires >= 40px)
+                if (cropW < 48)
+                {
+                    int extra = 48 - cropW;
+                    px = Math.Max(0, px - extra / 2);
+                    cropW = Math.Min(pw - px, 48);
+                }
+                if (cropH < 48)
+                {
+                    int extra = 48 - cropH;
+                    py = Math.Max(0, py - extra / 2);
+                    cropH = Math.Min(ph - py, 48);
+                }
 
                 if (cropW < 4 || cropH < 4)
                 {
                     return string.Empty;
                 }
 
-                var dv = new DrawingVisual();
-                using (var dc = dv.RenderOpen())
+                // 1. Direct pixel crop in native bitmap resolution
+                var crop = new CroppedBitmap(bmp, new Int32Rect(px, py, cropW, cropH));
+                var bgra = new FormatConvertedBitmap(crop, PixelFormats.Bgra32, null, 0);
+                int stride = cropW * 4;
+                byte[] pixels = new byte[cropH * stride];
+                bgra.CopyPixels(pixels, stride, 0);
+
+                // 2. Scanline polygon raster mask: for each row, find polygon intersections.
+                // Every pixel outside the user's freehand circle is overwritten with pure solid white (#FFFFFF).
+                // This physically erases any surrounding text (e.g. lines above or below) from the image.
+                var polyPts = closedPolygon.Select(p => new Point(p.X * pw - px, p.Y * ph - py)).ToList();
+                for (int y = 0; y < cropH; y++)
                 {
-                    dc.DrawRectangle(Brushes.White, null, new Rect(0, 0, cropW, cropH));
-                    var streamGeom = new StreamGeometry();
-                    using (var sgc = streamGeom.Open())
+                    var intersections = new List<double>();
+                    for (int i = 0; i < polyPts.Count; i++)
                     {
-                        var first = normPolygon[0];
-                        sgc.BeginFigure(new Point(first.X * pw - px, first.Y * ph - py), isFilled: true, isClosed: true);
-                        for (int i = 1; i < normPolygon.Count; i++)
+                        var p1 = polyPts[i];
+                        var p2 = polyPts[(i + 1) % polyPts.Count];
+
+                        if ((p1.Y <= y && p2.Y > y) || (p2.Y <= y && p1.Y > y))
                         {
-                            var pt = normPolygon[i];
-                            sgc.LineTo(new Point(pt.X * pw - px, pt.Y * ph - py), isStroked: false, isSmoothJoin: true);
+                            double t = (y - p1.Y) / (p2.Y - p1.Y);
+                            intersections.Add(p1.X + t * (p2.X - p1.X));
                         }
                     }
-                    streamGeom.Freeze();
-                    dc.PushClip(streamGeom);
-                    dc.DrawImage(bmp, new Rect(-px, -py, pw, ph));
-                    dc.Pop();
+
+                    intersections.Sort();
+
+                    int rowOffset = y * stride;
+                    for (int x = 0; x < cropW; x++)
+                    {
+                        bool inside = false;
+                        for (int k = 0; k + 1 < intersections.Count; k += 2)
+                        {
+                            if (x >= intersections[k] && x <= intersections[k + 1])
+                            {
+                                inside = true;
+                                break;
+                            }
+                        }
+
+                        if (!inside)
+                        {
+                            int idx = rowOffset + x * 4;
+                            pixels[idx] = 255;     // B
+                            pixels[idx + 1] = 255; // G
+                            pixels[idx + 2] = 255; // R
+                            pixels[idx + 3] = 255; // A
+                        }
+                    }
                 }
 
-                var maskedBmp = new RenderTargetBitmap(cropW, cropH, 96, 96, PixelFormats.Pbgra32);
-                maskedBmp.Render(dv);
+                var maskedBmp = BitmapSource.Create(cropW, cropH, 96, 96, PixelFormats.Bgra32, null, pixels, stride);
                 maskedBmp.Freeze();
 
-                var recognizedWords = await ocrService.RecognizeWordsFromBitmapAsync(maskedBmp);
-                if (recognizedWords.Count == 0)
-                {
-                    return await ocrService.RecognizeTextFromBitmapAsync(maskedBmp);
-                }
-
-                // Strictly filter every word against the user-drawn circle/polygon:
-                // Map the word's bounding box back to normalized page coordinates [0, 1]
-                var validWords = new List<(string Text, double X, double Y)>();
-                foreach (var w in recognizedWords)
-                {
-                    double wordNormX = (px + w.X) / pw;
-                    double wordNormY = (py + w.Y) / ph;
-                    double wordNormW = w.Width / pw;
-                    double wordNormH = w.Height / ph;
-
-                    var center = new NormalizedPoint(wordNormX + wordNormW * 0.5, wordNormY + wordNormH * 0.5);
-                    var leftPt = new NormalizedPoint(wordNormX + wordNormW * 0.2, wordNormY + wordNormH * 0.5);
-                    var rightPt = new NormalizedPoint(wordNormX + wordNormW * 0.8, wordNormY + wordNormH * 0.5);
-
-                    bool isInside = IsPointInPolygon(center, normPolygon) ||
-                                    (IsPointInPolygon(leftPt, normPolygon) && IsPointInPolygon(rightPt, normPolygon));
-
-                    if (isInside)
-                    {
-                        validWords.Add((w.Text, wordNormX, wordNormY));
-                    }
-                }
-
-                if (validWords.Count == 0)
-                {
-                    return string.Empty;
-                }
-
-                // Sort words in reading order (top to bottom, left to right):
-                var sorted = validWords
-                    .OrderBy(w => w.Y)
-                    .ThenBy(w => w.X)
-                    .ToList();
-
-                var lines = new List<List<(string Text, double X, double Y)>>();
-                foreach (var word in sorted)
-                {
-                    var existingLine = lines.FirstOrDefault(line => Math.Abs(line[0].Y - word.Y) <= 0.012);
-                    if (existingLine is not null)
-                    {
-                        existingLine.Add(word);
-                    }
-                    else
-                    {
-                        lines.Add([word]);
-                    }
-                }
-
-                var sortedLines = lines
-                    .OrderBy(line => line.Average(w => w.Y))
-                    .Select(line => string.Join(" ", line.OrderBy(w => w.X).Select(w => w.Text)));
-
-                return string.Join(" ", sortedLines);
+                return await ocrService.RecognizeTextFromBitmapAsync(maskedBmp);
             }
             else
             {
@@ -739,7 +739,6 @@ public sealed partial class DocumentTabViewModel : ObservableObject, IDisposable
 
                 var crop = new CroppedBitmap(bmp, new Int32Rect(px, py, cropW, cropH));
                 crop.Freeze();
-
                 return await ocrService.RecognizeTextFromBitmapAsync(crop);
             }
         }

@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using StudySuit.PdfReader.Models;
 using StudySuit.PdfReader.Services;
 using StudySuit.PdfReader.ViewModels;
@@ -2626,6 +2627,127 @@ public sealed class PdfReaderTests : IDisposable
     }
 
     [Fact]
+    public async Task ScanlineMaskedOcr_NcErtPage16_Question20()
+    {
+        string ncertPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "StudySuit.PdfReader", "library", "ncert", "jesc1", "jesc101.pdf");
+
+        if (!File.Exists(ncertPath)) return;
+
+        var ocr = new WindowsOcrService();
+        if (!ocr.IsSupported) return;
+
+        // Render page 16 at 192 DPI
+        var bmp = await _pdfService.RenderPageAsync(ncertPath, 16, 192, 0);
+
+        string scratchDir = @"C:\Users\SURYA\.gemini\antigravity\brain\d218edce-7961-4978-918b-55ddf267c5d1\scratch";
+        Directory.CreateDirectory(scratchDir);
+        var encFull = new PngBitmapEncoder();
+        encFull.Frames.Add(BitmapFrame.Create(bmp));
+        using (var fs = File.Create(Path.Combine(scratchDir, "page16_full.png")))
+        {
+            encFull.Save(fs);
+        }
+
+        // Define user's circle around Question 20:
+        // Question 19 ends at Y=0.358 (y=750)
+        // Question 20 starts at Y=0.360 (y=755) down to Y=0.420 (y=878)
+        var polygon = new List<NormalizedPoint>
+        {
+            new(0.08, 0.359),
+            new(0.50, 0.359),
+            new(0.85, 0.359),
+            new(0.86, 0.390),
+            new(0.85, 0.422),
+            new(0.50, 0.422),
+            new(0.08, 0.422),
+            new(0.07, 0.390),
+            new(0.08, 0.359)
+        };
+
+        double minX = polygon.Min(p => p.X);
+        double maxX = polygon.Max(p => p.X);
+        double minY = polygon.Min(p => p.Y);
+        double maxY = polygon.Max(p => p.Y);
+
+        int pw = bmp.PixelWidth;
+        int ph = bmp.PixelHeight;
+
+        int px = (int)Math.Floor(minX * pw);
+        int py = (int)Math.Floor(minY * ph);
+        int cropW = (int)Math.Ceiling((maxX - minX) * pw);
+        int cropH = (int)Math.Ceiling((maxY - minY) * ph);
+
+        var crop = new CroppedBitmap(bmp, new System.Windows.Int32Rect(px, py, cropW, cropH));
+        var bgra = new FormatConvertedBitmap(crop, PixelFormats.Bgra32, null, 0);
+        int stride = cropW * 4;
+        byte[] pixels = new byte[cropH * stride];
+        bgra.CopyPixels(pixels, stride, 0);
+
+        // Scanline mask: for each row, find polygon intersections
+        var polyPts = polygon.Select(p => new System.Windows.Point(p.X * pw - px, p.Y * ph - py)).ToList();
+        for (int y = 0; y < cropH; y++)
+        {
+            var intersections = new List<double>();
+            for (int i = 0; i < polyPts.Count; i++)
+            {
+                var p1 = polyPts[i];
+                var p2 = polyPts[(i + 1) % polyPts.Count];
+
+                if ((p1.Y <= y && p2.Y > y) || (p2.Y <= y && p1.Y > y))
+                {
+                    double t = (y - p1.Y) / (p2.Y - p1.Y);
+                    intersections.Add(p1.X + t * (p2.X - p1.X));
+                }
+            }
+
+            intersections.Sort();
+
+            int rowOffset = y * stride;
+            for (int x = 0; x < cropW; x++)
+            {
+                bool inside = false;
+                for (int k = 0; k + 1 < intersections.Count; k += 2)
+                {
+                    if (x >= intersections[k] && x <= intersections[k + 1])
+                    {
+                        inside = true;
+                        break;
+                    }
+                }
+
+                if (!inside)
+                {
+                    int idx = rowOffset + x * 4;
+                    pixels[idx] = 255;
+                    pixels[idx + 1] = 255;
+                    pixels[idx + 2] = 255;
+                    pixels[idx + 3] = 255;
+                }
+            }
+        }
+
+        var maskedBmp = BitmapSource.Create(cropW, cropH, 96, 96, PixelFormats.Bgra32, null, pixels, stride);
+        maskedBmp.Freeze();
+
+        var enc = new PngBitmapEncoder();
+        enc.Frames.Add(BitmapFrame.Create(maskedBmp));
+        using (var fs = File.Create(Path.Combine(scratchDir, "scanline_masked_q20.png")))
+        {
+            enc.Save(fs);
+        }
+
+        string text = await ocr.RecognizeTextFromBitmapAsync(maskedBmp);
+        File.WriteAllText(Path.Combine(scratchDir, "scanline_ocr_text.txt"), text);
+
+        Assert.NotEmpty(text);
+        Assert.DoesNotContain("nitrogen", text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("flushed", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Corrosion", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ExtractTextWithOcr_NcErtPage16_Question20_PolygonTests()
     {
         string ncertPath = Path.Combine(
@@ -2644,21 +2766,21 @@ public sealed class PdfReaderTests : IDisposable
         var tabVm = new DocumentTabViewModel(docInfo, _pdfService);
 
         // Polygon strictly circling question 20:
-        // Question 19 is at Y=0.360.
-        // Question 20 is from Y=0.375 to Y=0.425.
+        // Question 19 ends above Y=0.355.
+        // Question 20 starts at Y=0.358 to Y=0.425.
         var polygon = new List<NormalizedPoint>
         {
-            new(0.08, 0.368),
-            new(0.85, 0.368),
+            new(0.08, 0.358),
+            new(0.85, 0.358),
             new(0.85, 0.430),
             new(0.08, 0.430)
         };
-        var normRect = new NormalizedRect(0.08, 0.368, 0.77, 0.062);
+        var normRect = new NormalizedRect(0.08, 0.358, 0.77, 0.072);
 
         var ocr = new WindowsOcrService();
         if (!ocr.IsSupported) return;
 
-        var rendered = await _pdfService.RenderPageAsync(ncertPath, 16, 144, 0);
+        var rendered = await _pdfService.RenderPageAsync(ncertPath, 16, 200, 0);
         string text = await tabVm.ExtractTextWithOcrAsync(16, normRect, ocr, rendered, polygon);
 
         var words = await _pdfService.GetPageWordsAsync(ncertPath, 16);
@@ -2674,7 +2796,56 @@ public sealed class PdfReaderTests : IDisposable
         Assert.DoesNotContain("nitrogen", text, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("flushed", text, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("food items", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Explain the following terms", text, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Corrosion", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Rancidity", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ExtractTextWithOcr_NcErtPage16_Question12_TwoLinesOcrTest()
+    {
+        string ncertPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "StudySuit.PdfReader", "library", "ncert", "jesc1", "jesc101.pdf");
+
+        if (!File.Exists(ncertPath)) return;
+
+        var docInfo = new PdfDocumentInfo
+        {
+            FileName = "jesc101.pdf",
+            FilePath = ncertPath,
+            PageCount = 16,
+            PageSizes = [new PdfPageSize(612, 820.8)]
+        };
+        var tabVm = new DocumentTabViewModel(docInfo, _pdfService);
+
+        // Circled around Question 12 (both lines: Y from ~0.088 to 0.132)
+        // Line 1: "12. Write one equation each for decomposition reactions where energy is supplied in" (Y ~ 0.090-0.110)
+        // Line 2: "the form of heat, light or electricity." (Y ~ 0.110-0.129)
+        var poly = new List<NormalizedPoint>
+        {
+            new(0.06, 0.088),
+            new(0.50, 0.086),
+            new(0.92, 0.088),
+            new(0.94, 0.110),
+            new(0.92, 0.132),
+            new(0.50, 0.134),
+            new(0.06, 0.132),
+            new(0.04, 0.110),
+            new(0.06, 0.088)
+        };
+        var normRect = new NormalizedRect(0.04, 0.086, 0.90, 0.048);
+
+        var ocr = new WindowsOcrService();
+        if (!ocr.IsSupported) return;
+
+        var rendered = await _pdfService.RenderPageAsync(ncertPath, 16, 200, 0);
+        string text = await tabVm.ExtractTextWithOcrAsync(16, normRect, ocr, rendered, poly);
+
+        Assert.Contains("Write one equation each for decomposition", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("energy is supplied in", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("heat, light or electricity", text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("displacement", text, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -2716,6 +2887,37 @@ public sealed class PdfReaderTests : IDisposable
         Assert.Contains("form of heat, light or electricity", extracted);
         // Ensure Question 13 below is NOT included
         Assert.DoesNotContain("displacement", extracted);
+    }
+
+    [Fact]
+    public async Task WinOcr_Limits_Test()
+    {
+        var ocr = new WindowsOcrService();
+        if (!ocr.IsSupported) return;
+
+        var rtbSmall = new RenderTargetBitmap(300, 30, 96, 96, PixelFormats.Pbgra32);
+        string textSmall = await ocr.RecognizeTextFromBitmapAsync(rtbSmall);
+        var wordsSmall = await ocr.RecognizeWordsFromBitmapAsync(rtbSmall);
+
+        string scratchDir = @"C:\Users\SURYA\.gemini\antigravity\brain\d218edce-7961-4978-918b-55ddf267c5d1\scratch";
+        File.WriteAllText(Path.Combine(scratchDir, "small_ocr.txt"), $"textSmall: '{textSmall}', wordsSmall: {wordsSmall.Count}");
+    }
+
+    [Fact]
+    public async Task Debug_Slices_Ocr()
+    {
+        var ocr = new WindowsOcrService();
+        if (!ocr.IsSupported) return;
+
+        string scratchDir = @"C:\Users\SURYA\.gemini\antigravity\brain\d218edce-7961-4978-918b-55ddf267c5d1\scratch";
+        var lines = new List<string>();
+        foreach (var file in Directory.GetFiles(scratchDir, "slice_*.png"))
+        {
+            var bmp = new BitmapImage(new Uri(file));
+            string t = await ocr.RecognizeTextFromBitmapAsync(bmp);
+            lines.Add($"{Path.GetFileName(file)}: [{t}]");
+        }
+        File.WriteAllLines(Path.Combine(scratchDir, "slices_ocr.txt"), lines);
     }
 }
 

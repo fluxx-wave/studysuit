@@ -1988,42 +1988,34 @@ public partial class MainWindow : FluentWindow
         _circleSelectionPageNumber = pageVm.PageNumber;
         var sw = System.Diagnostics.Stopwatch.StartNew();
 
-        var (extractedText, matchedRects) = await _wiredTab.ExtractTextInPolygonWithRectsAsync(pageVm.PageNumber, normPolygon);
-        _circleSelectionText = extractedText;
-
+        // 1. PRIMARY & EXCLUSIVE: Run scanline-masked OCR directly on the pixels under the circled area.
+        // Every pixel outside the user's freehand circle is masked with pure solid white (#FFFFFF).
+        // Text outside the circle physically does not exist in the raster buffer passed to OCR.
+        string ocrText = string.Empty;
         bool usedOcr = false;
-        // 1. Vector text is extracted with exact word boundaries and native PDF character precision.
-        // 2. Only fall back to OCR if vector extraction found no words (e.g. Scanned book, raster diagram, image-only document)
-        //    or if vector text was minimal (< 2 words) while OCR detected meaningful text inside the polygon.
-        if (string.IsNullOrWhiteSpace(_circleSelectionText) || matchedRects.Count < 2)
-        {
-            if (_ocrService.IsSupported)
-            {
-                string ocrText = await _wiredTab.ExtractTextWithOcrAsync(
-                    pageVm.PageNumber,
-                    normRect,
-                    _ocrService,
-                    pageVm.RenderedImage,
-                    normPolygon);
 
-                if (!string.IsNullOrWhiteSpace(ocrText))
-                {
-                    if (string.IsNullOrWhiteSpace(_circleSelectionText) || ocrText.Length > _circleSelectionText.Length)
-                    {
-                        _circleSelectionText = ocrText.Trim();
-                        usedOcr = true;
-                    }
-                }
-            }
+        if (_ocrService.IsSupported)
+        {
+            ocrText = await _wiredTab.ExtractTextWithOcrAsync(
+                pageVm.PageNumber,
+                normRect,
+                _ocrService,
+                pageVm.RenderedImage,
+                normPolygon);
+
+            _circleSelectionText = ocrText?.Trim() ?? string.Empty;
+            usedOcr = true;
+        }
+        else
+        {
+            // Fallback only if OCR engine is completely unsupported on this platform (e.g. non-Windows OS)
+            var (vectorText, _) = await _wiredTab.ExtractTextInPolygonWithRectsAsync(pageVm.PageNumber, normPolygon);
+            _circleSelectionText = vectorText?.Trim() ?? string.Empty;
         }
         sw.Stop();
 
         // Highlight selection with a friendly cyan glow:
-        // If specific words were detected inside the circle, highlight the exact word boxes!
-        // If it's a visual diagram or region without text, highlight the bounding rect.
-        var highlightRects = matchedRects.Count > 0
-            ? matchedRects.Select(r => r.Rotate(_wiredTab.RotationDegrees)).ToList()
-            : [normRect];
+        var highlightRects = new List<NormalizedRect> { normRect };
 
         pageVm.UpdateLiveWordSelection(
             highlightRects,
