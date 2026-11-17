@@ -14,6 +14,11 @@ public interface IWebResearchService
         string query,
         AiAssistantSettings settings,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<WebImageReference>> SearchImagesAsync(
+        string query,
+        AiAssistantSettings settings,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed partial class WebResearchService : IWebResearchService
@@ -170,7 +175,7 @@ public sealed partial class WebResearchService : IWebResearchService
         {
             string url = $"https://html.duckduckgo.com/html/?q={Uri.EscapeDataString(query)}";
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
-            req.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) StudySuitPdfReader/1.0");
+            req.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) StudyMateAI/1.0");
 
             using var resp = await _http.SendAsync(req, ct);
             if (!resp.IsSuccessStatusCode)
@@ -235,7 +240,7 @@ public sealed partial class WebResearchService : IWebResearchService
             // Primary: Generator search with pageimages (authentic high-res thumbnails) and extracts:
             string url = $"https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch={Uri.EscapeDataString(query)}&gsrlimit={maxResults}&prop=pageimages|extracts&piprop=thumbnail&pithumbsize=600&exintro=1&explaintext=1&exsentences=3&format=json&utf8=1";
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
-            req.Headers.TryAddWithoutValidation("User-Agent", "StudySuitPdfReader/1.0 (https://localhost)");
+            req.Headers.TryAddWithoutValidation("User-Agent", "StudyMateAI/1.0 (https://localhost)");
 
             using var resp = await _http.SendAsync(req, ct);
             if (resp.IsSuccessStatusCode)
@@ -357,12 +362,277 @@ public sealed partial class WebResearchService : IWebResearchService
         return WhitespaceRegex().Replace(decoded, " ").Trim();
     }
 
+    public async Task<IReadOnlyList<WebImageReference>> SearchImagesAsync(
+        string query,
+        AiAssistantSettings settings,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return [];
+        }
+
+        string effectiveQuery = SanitizeAndGroundTemporalQuery(query);
+        int maxResults = Math.Clamp(settings.MaxWebResults, 2, 8);
+
+        // 1. If Tavily is configured with an API key, try Tavily image search first
+        if (settings.WebSearchProvider == WebSearchProviderKind.Tavily &&
+            !string.IsNullOrWhiteSpace(settings.WebSearchApiKey))
+        {
+            var tavilyImages = await SearchTavilyImagesAsync(effectiveQuery, settings.WebSearchApiKey, maxResults, cancellationToken).ConfigureAwait(false);
+            if (tavilyImages.Count > 0)
+            {
+                return tavilyImages;
+            }
+        }
+
+        // 2. High-speed direct web & Google Images search (returns direct image links with full metadata)
+        var list = await SearchWebImagesAsync(effectiveQuery, maxResults, cancellationToken).ConfigureAwait(false);
+        if (list.Count >= 2)
+        {
+            return list;
+        }
+
+        // 3. Educational diagrams, science figures & maps from Wikimedia Commons
+        var wikiImages = await SearchWikimediaImagesAsync(effectiveQuery, maxResults - list.Count, cancellationToken).ConfigureAwait(false);
+        foreach (var img in wikiImages)
+        {
+            if (!list.Any(i => string.Equals(i.ImageUrl, img.ImageUrl, StringComparison.OrdinalIgnoreCase)))
+            {
+                list.Add(new WebImageReference
+                {
+                    Index = list.Count + 1,
+                    Title = img.Title,
+                    ImageUrl = img.ImageUrl,
+                    SourcePageUrl = img.SourcePageUrl
+                });
+            }
+        }
+
+        return list;
+    }
+
+    private async Task<List<WebImageReference>> SearchWebImagesAsync(
+        string query,
+        int maxResults,
+        CancellationToken ct)
+    {
+        var results = new List<WebImageReference>();
+        try
+        {
+            string url = $"https://www.bing.com/images/async?q={Uri.EscapeDataString(query)}&first=1&count={Math.Max(maxResults * 2, 12)}";
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            req.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            req.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+            req.Headers.TryAddWithoutValidation("Accept-Language", "en-US,en;q=0.9");
+
+            using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
+            if (!resp.IsSuccessStatusCode)
+            {
+                return results;
+            }
+
+            string html = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            var matches = BingImageCardRegex().Matches(html);
+
+            foreach (Match m in matches)
+            {
+                if (results.Count >= maxResults) break;
+
+                try
+                {
+                    string jsonStr = WebUtility.HtmlDecode(m.Groups[1].Value);
+                    using var doc = JsonDocument.Parse(jsonStr);
+                    var root = doc.RootElement;
+
+                    string murl = root.TryGetProperty("murl", out var mu) ? mu.GetString() ?? string.Empty : string.Empty;
+                    string turl = root.TryGetProperty("turl", out var tu) ? tu.GetString() ?? string.Empty : string.Empty;
+                    string title = root.TryGetProperty("t", out var t) ? t.GetString() ?? string.Empty : string.Empty;
+                    string purl = root.TryGetProperty("purl", out var pu) ? pu.GetString() ?? string.Empty : string.Empty;
+
+                    // Prefer reliable CDN image: if murl is unsecure, paywalled, or from a known hotlink-blocking site
+                    // (e.g. freepik, alamy, shutterstock, pinterest), swap to Microsoft Bing CDN (turl) which never blocks.
+                    string effectiveImageUrl = murl;
+                    if (string.IsNullOrWhiteSpace(effectiveImageUrl) ||
+                        !effectiveImageUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+                        IsBlockedImageHost(effectiveImageUrl))
+                    {
+                        if (!string.IsNullOrWhiteSpace(turl))
+                        {
+                            effectiveImageUrl = turl.Contains('?') ? $"{turl}&w=800" : $"{turl}?w=800";
+                        }
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(effectiveImageUrl) &&
+                        effectiveImageUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase) &&
+                        !results.Any(r => string.Equals(r.ImageUrl, effectiveImageUrl, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        title = CleanHtmlText(title.Replace("&quot;", "\""));
+                        results.Add(new WebImageReference
+                        {
+                            Index = results.Count + 1,
+                            Title = string.IsNullOrWhiteSpace(title) ? query : title,
+                            ImageUrl = effectiveImageUrl,
+                            SourcePageUrl = purl
+                        });
+                    }
+                }
+                catch
+                {
+                    // Ignore parse errors on individual cards
+                }
+            }
+        }
+        catch
+        {
+            // Safeguard against network timeouts
+        }
+
+        return results;
+    }
+
+    private async Task<List<WebImageReference>> SearchWikimediaImagesAsync(
+        string query,
+        int maxResults,
+        CancellationToken ct)
+    {
+        var results = new List<WebImageReference>();
+        if (maxResults <= 0) return results;
+
+        try
+        {
+            string url = $"https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch={Uri.EscapeDataString(query)}&gsrnamespace=6&prop=imageinfo&iiprop=url|size|mime&iiurlwidth=800&format=json&utf8=1";
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            req.Headers.TryAddWithoutValidation("User-Agent", "StudyMateAI/1.0 (https://localhost)");
+
+            using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
+            if (!resp.IsSuccessStatusCode) return results;
+
+            using var doc = await JsonDocument.ParseAsync(await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false), cancellationToken: ct).ConfigureAwait(false);
+            if (doc.RootElement.TryGetProperty("query", out var qObj) &&
+                qObj.TryGetProperty("pages", out var pagesObj) &&
+                pagesObj.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var prop in pagesObj.EnumerateObject())
+                {
+                    if (results.Count >= maxResults) break;
+
+                    var page = prop.Value;
+                    string rawTitle = page.TryGetProperty("title", out var t) ? t.GetString() ?? string.Empty : string.Empty;
+                    if (rawTitle.StartsWith("File:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        rawTitle = rawTitle[5..].Trim();
+                    }
+
+                    if (page.TryGetProperty("imageinfo", out var infoArr) &&
+                        infoArr.ValueKind == JsonValueKind.Array &&
+                        infoArr.GetArrayLength() > 0)
+                    {
+                        var first = infoArr[0];
+                        string thumbUrl = first.TryGetProperty("thumburl", out var tu) ? tu.GetString() ?? string.Empty : string.Empty;
+                        string originalUrl = first.TryGetProperty("url", out var u) ? u.GetString() ?? string.Empty : string.Empty;
+
+                        string effectiveUrl = !string.IsNullOrWhiteSpace(thumbUrl) ? thumbUrl : originalUrl;
+                        if (!string.IsNullOrWhiteSpace(effectiveUrl) &&
+                            effectiveUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase) &&
+                            !results.Any(r => string.Equals(r.ImageUrl, effectiveUrl, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            results.Add(new WebImageReference
+                            {
+                                Index = results.Count + 1,
+                                Title = string.IsNullOrWhiteSpace(rawTitle) ? query : rawTitle,
+                                ImageUrl = effectiveUrl,
+                                SourcePageUrl = originalUrl
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Ignore
+        }
+
+        return results;
+    }
+
+    private async Task<List<WebImageReference>> SearchTavilyImagesAsync(
+        string query,
+        string apiKey,
+        int maxResults,
+        CancellationToken ct)
+    {
+        try
+        {
+            var payload = new
+            {
+                api_key = apiKey,
+                query,
+                max_results = maxResults,
+                include_images = true
+            };
+
+            using var resp = await _http.PostAsJsonAsync("https://api.tavily.com/search", payload, ct).ConfigureAwait(false);
+            if (!resp.IsSuccessStatusCode) return [];
+
+            using var doc = await JsonDocument.ParseAsync(await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false), cancellationToken: ct).ConfigureAwait(false);
+            if (!doc.RootElement.TryGetProperty("images", out var arr) || arr.ValueKind != JsonValueKind.Array)
+            {
+                return [];
+            }
+
+            var list = new List<WebImageReference>();
+            foreach (var item in arr.EnumerateArray())
+            {
+                string url = item.GetString() ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(url) && url.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                {
+                    list.Add(new WebImageReference
+                    {
+                        Index = list.Count + 1,
+                        Title = $"{query} (Visual {list.Count + 1})",
+                        ImageUrl = url,
+                        SourcePageUrl = url
+                    });
+                }
+            }
+
+            return list;
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
     private static string Truncate(string s, int max) => s.Length > max ? $"{s[..max]}…" : s;
+
+    public static bool IsBlockedImageHost(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return true;
+        string lower = url.ToLowerInvariant();
+        return lower.Contains("freepik.com") ||
+               lower.Contains("alamy.com") ||
+               lower.Contains("shutterstock.com") ||
+               lower.Contains("istockphoto.com") ||
+               lower.Contains("gettyimages.com") ||
+               lower.Contains("dreamstime.com") ||
+               lower.Contains("123rf.com") ||
+               lower.Contains("stock.adobe.com") ||
+               lower.Contains("depositphotos.com") ||
+               lower.Contains("pinterest.com") ||
+               lower.Contains("pinimg.com") ||
+               lower.Contains("vectorstock.com");
+    }
 
     private static HttpClient CreateDefaultClient() => new()
     {
         Timeout = TimeSpan.FromSeconds(12)
     };
+
+    [GeneratedRegex(@"class=""iusc""[^>]*m=""([^""]+)""", RegexOptions.IgnoreCase)]
+    private static partial Regex BingImageCardRegex();
 
     [GeneratedRegex(@"<a[^>]*class=""[^""]*result__a[^""]*""[^>]*href=""([^""]+)""[^>]*>(.*?)</a>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex DdgLinkRegex();

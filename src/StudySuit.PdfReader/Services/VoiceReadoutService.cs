@@ -13,6 +13,7 @@ public interface IVoiceReadoutService : IDisposable
 {
     Task SpeakAsync(string markdownText, VoiceReadoutMode mode, CancellationToken cancellationToken = default);
     Task SpeakAsync(string markdownText, VoiceReadoutMode mode, double speed, int pitch, string? voiceName = null, CancellationToken cancellationToken = default);
+    Task PlayAudioBytesAsync(byte[] audioBytes, string format = "wav", double speed = 1.0, CancellationToken cancellationToken = default);
     IReadOnlyList<string> GetInstalledWindowsVoices();
     void Stop();
 }
@@ -26,6 +27,7 @@ public sealed partial class VoiceReadoutService : IVoiceReadoutService
     private readonly HttpClient _http;
     private readonly string _tempDir;
     private MediaPlayer? _activePlayer;
+    private System.Media.SoundPlayer? _activeSoundPlayer;
     private dynamic? _activeSpVoice;
     private CancellationTokenSource? _internalCts;
     private int _playbackGeneration;
@@ -132,6 +134,115 @@ public sealed partial class VoiceReadoutService : IVoiceReadoutService
         }
     }
 
+    public async Task PlayAudioBytesAsync(
+        byte[] audioBytes,
+        string format = "wav",
+        double speed = 1.0,
+        CancellationToken cancellationToken = default)
+    {
+        Stop();
+        int myGeneration = Interlocked.Increment(ref _playbackGeneration);
+
+        if (audioBytes == null || audioBytes.Length == 0)
+        {
+            return;
+        }
+
+        string ext = format.Trim().TrimStart('.');
+        if (ext.Contains('/'))
+        {
+            ext = ext.Split('/')[^1];
+        }
+        if (string.Equals(ext, "x-wav", StringComparison.OrdinalIgnoreCase)) ext = "wav";
+        if (string.IsNullOrWhiteSpace(ext)) ext = "wav";
+
+        if (string.Equals(ext, "pcm", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(ext, "pcm16", StringComparison.OrdinalIgnoreCase) ||
+            (ext == "wav" && (audioBytes.Length < 4 || audioBytes[0] != 'R' || audioBytes[1] != 'I' || audioBytes[2] != 'F' || audioBytes[3] != 'F')))
+        {
+            int sampleRate = format.Contains("16", StringComparison.OrdinalIgnoreCase) && !format.Contains("pcm16", StringComparison.OrdinalIgnoreCase) ? 16000 : 24000;
+            audioBytes = WrapPcmInWav(audioBytes, sampleRate: sampleRate, channels: 1, bitsPerSample: 16);
+            ext = "wav";
+        }
+
+        _internalCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var ct = _internalCts.Token;
+
+        // If WAV, use Windows SoundPlayer in memory for 100% reliable direct instant audio playback
+        if (string.Equals(ext, "wav", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                await Task.Run(() =>
+                {
+                    if (ct.IsCancellationRequested || Volatile.Read(ref _playbackGeneration) != myGeneration)
+                    {
+                        return;
+                    }
+
+                    using var ms = new MemoryStream(audioBytes);
+                    using var player = new System.Media.SoundPlayer(ms);
+                    _activeSoundPlayer = player;
+
+                    using var reg = ct.Register(() =>
+                    {
+                        try { player.Stop(); } catch { }
+                    });
+
+                    player.Load();
+                    if (ct.IsCancellationRequested || Volatile.Read(ref _playbackGeneration) != myGeneration)
+                    {
+                        return;
+                    }
+
+                    player.PlaySync();
+                }, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch
+            {
+                // Fall back to PlayAudioFileAsync if SoundPlayer encounters an issue
+                string fallbackName = $"omni_{Guid.NewGuid():N}.wav";
+                string fallbackPath = Path.Combine(_tempDir, fallbackName);
+                try
+                {
+                    await File.WriteAllBytesAsync(fallbackPath, audioBytes, ct).ConfigureAwait(false);
+                    await PlayAudioFileAsync(fallbackPath, speed, myGeneration, ct).ConfigureAwait(false);
+                }
+                finally
+                {
+                    if (Volatile.Read(ref _playbackGeneration) == myGeneration)
+                    {
+                        StopActivePlayers();
+                    }
+                }
+            }
+            finally
+            {
+                _activeSoundPlayer = null;
+            }
+            return;
+        }
+
+        string fileName = $"omni_{Guid.NewGuid():N}.{ext}";
+        string filePath = Path.Combine(_tempDir, fileName);
+
+        try
+        {
+            await File.WriteAllBytesAsync(filePath, audioBytes, ct).ConfigureAwait(false);
+            await PlayAudioFileAsync(filePath, speed, myGeneration, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (Volatile.Read(ref _playbackGeneration) == myGeneration)
+            {
+                StopActivePlayers();
+            }
+        }
+    }
+
     public void Stop()
     {
         Interlocked.Increment(ref _playbackGeneration);
@@ -141,6 +252,15 @@ public sealed partial class VoiceReadoutService : IVoiceReadoutService
             _internalCts?.Cancel();
             _internalCts?.Dispose();
             _internalCts = null;
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            _activeSoundPlayer?.Stop();
+            _activeSoundPlayer = null;
         }
         catch
         {
@@ -156,7 +276,13 @@ public sealed partial class VoiceReadoutService : IVoiceReadoutService
             return string.Empty;
         }
 
-        string text = markdown.Replace("\r\n", "\n").Replace('\r', '\n');
+        string text = AiChatService.SanitizeSpokenTranscript(markdown);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
+        text = text.Replace("\r\n", "\n").Replace('\r', '\n');
 
         text = FencedBlockRegex().Replace(text, m =>
         {
@@ -320,7 +446,11 @@ public sealed partial class VoiceReadoutService : IVoiceReadoutService
     {
         string filePath = Path.Combine(_tempDir, $"tts_{Guid.NewGuid():N}.mp3");
         await File.WriteAllBytesAsync(filePath, mp3Bytes, ct).ConfigureAwait(false);
+        await PlayAudioFileAsync(filePath, speed, generation, ct).ConfigureAwait(false);
+    }
 
+    private async Task PlayAudioFileAsync(string filePath, double speed, int generation, CancellationToken ct)
+    {
         try
         {
             var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -379,6 +509,35 @@ public sealed partial class VoiceReadoutService : IVoiceReadoutService
             {
             }
         }
+    }
+
+    public static byte[] WrapPcmInWav(byte[] pcmData, int sampleRate = 16000, short channels = 1, short bitsPerSample = 16)
+    {
+        using var ms = new MemoryStream();
+        using var bw = new BinaryWriter(ms);
+        int subChunk1Size = 16;
+        short audioFormat = 1; // PCM
+        int byteRate = sampleRate * channels * (bitsPerSample / 8);
+        short blockAlign = (short)(channels * (bitsPerSample / 8));
+        int subChunk2Size = pcmData.Length;
+        int chunkSize = 36 + subChunk2Size;
+
+        bw.Write(Encoding.ASCII.GetBytes("RIFF"));
+        bw.Write(chunkSize);
+        bw.Write(Encoding.ASCII.GetBytes("WAVE"));
+        bw.Write(Encoding.ASCII.GetBytes("fmt "));
+        bw.Write(subChunk1Size);
+        bw.Write(audioFormat);
+        bw.Write(channels);
+        bw.Write(sampleRate);
+        bw.Write(byteRate);
+        bw.Write(blockAlign);
+        bw.Write(bitsPerSample);
+        bw.Write(Encoding.ASCII.GetBytes("data"));
+        bw.Write(subChunk2Size);
+        bw.Write(pcmData);
+
+        return ms.ToArray();
     }
 
     private Task SpeakViaWindowsSapiAsync(string text, double speed, int pitch, string? voiceName, int generation, CancellationToken ct)
@@ -649,7 +808,7 @@ public sealed partial class VoiceReadoutService : IVoiceReadoutService
     private static HttpClient CreateDefaultClient()
     {
         var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-        client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) StudySuitPdfReader/1.0");
+        client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) StudyMateAI/1.0");
         return client;
     }
 

@@ -9,6 +9,7 @@ public enum AiProviderKind
     LmStudioLocal,
     LlamaCppLocal,
     OpenAi,
+    LiquidAi,
     Gemini,
     Anthropic,
     CustomOpenAiCompatible
@@ -76,7 +77,7 @@ public static class AiPersonalisationDefaults
             "UPSC (CSE Prelims & Mains)",
             "UPSC",
             "GS Prelims traps + structured Mains format (Intro, multidimensional GS body, Way Forward).",
-            "You are StudySuit AI configured as an expert UPSC Civil Services (CSE Prelims & Mains) mentor. " +
+            "You are StudyMateAI configured as an expert UPSC Civil Services (CSE Prelims & Mains) mentor. " +
             "Structure analytical answers strictly for UPSC: begin with a concise contextual/constitutional/data-backed Introduction, present multidimensional analysis covering Historical, Polity/Governance (Articles, Acts, Supreme Court judgments, Committees), Economy, Social, Geography/Environment, and Ethical/IR dimensions with clear subheadings and bullet keywords, highlight Prelims-specific facts/elimination traps separately, and conclude with a balanced, constructive Way Forward aligned with government initiatives or SDGs. " +
             "Respond naturally to simple greetings without invoking tools; cite PDF pages and [n] web sources when used."),
         new(
@@ -84,7 +85,7 @@ public static class AiPersonalisationDefaults
             "SSC (CGL / CHSL / CPO / MTS)",
             "SSC",
             "High-yield exam facts, rapid quant tricks, static GK tables, and memory mnemonics.",
-            "You are StudySuit AI configured as an expert SSC (CGL, CHSL, CPO, MTS) competitive exam coach. " +
+            "You are StudyMateAI configured as an expert SSC (CGL, CHSL, CPO, MTS) competitive exam coach. " +
             "Focus strictly on high-yield objective exam scoring: give direct formula shortcuts and mental-math tricks for Quantitative Aptitude, crisp grammar/exception rules for English, logical pattern shortcuts for Reasoning, and factual bullet/table summaries (dates, Constitutional Articles, Amendments, Rivers, Awards, Books, Science laws) with quick memory mnemonics for General Awareness. Avoid fluffy essays. " +
             "Respond naturally to simple greetings without invoking tools; cite PDF pages and [n] web sources when used."),
         new(
@@ -92,7 +93,7 @@ public static class AiPersonalisationDefaults
             "JEE / NEET (STEM Competitive)",
             "JEE/NEET",
             "First-principles derivations, units/edge cases, MCQ traps, and numerical step clarity.",
-            "You are StudySuit AI configured as an expert JEE & NEET Physics/Chemistry/Mathematics/Biology coach. " +
+            "You are StudyMateAI configured as an expert JEE & NEET Physics/Chemistry/Mathematics/Biology coach. " +
             "Lead with key formulas, SI units, assumptions/boundary conditions, clear step-by-step derivations, NCERT/syllabus alignment, common MCQ traps to avoid, and time-saving elimination tricks. Always verify calculations step by step. " +
             "Respond naturally to simple greetings without invoking tools; cite PDF pages and [n] web sources when used."),
         new(
@@ -100,7 +101,7 @@ public static class AiPersonalisationDefaults
             "Deep Academic & Research",
             "Research",
             "University-grade rigor, formal definitions, evidence synthesis, and counterarguments.",
-            "You are StudySuit AI configured as a rigorous university-level research assistant. " +
+            "You are StudyMateAI configured as a rigorous university-level research assistant. " +
             "Provide precise formal definitions, theoretical grounding, methodology/evidence nuances, edge cases, and well-reasoned comparisons with zero oversimplification. Clearly distinguish verified document/web evidence from general background theory. " +
             "Respond naturally to simple greetings without invoking tools; cite PDF pages and [n] web sources when used."),
         new(
@@ -169,8 +170,9 @@ public static class AiProviderDefaults
     [
         new(AiProviderKind.OllamaLocal, "Ollama (Local)", "http://localhost:11434", "llama3.2", false, true),
         new(AiProviderKind.LmStudioLocal, "LM Studio (Local)", "http://localhost:1234/v1", "local-model", false, true),
-        new(AiProviderKind.LlamaCppLocal, "llama.cpp (Local)", "http://localhost:8080/v1", "qwen2.5-1.5b-instruct-q4_k_m.gguf", false, true),
+        new(AiProviderKind.LlamaCppLocal, "llama.cpp (Local)", "http://localhost:9931/v1", "qwen2.5-1.5b-instruct-q4_k_m.gguf", false, true),
         new(AiProviderKind.OpenAi, "OpenAI", "https://api.openai.com/v1", "gpt-4o-mini", true, false),
+        new(AiProviderKind.LiquidAi, "Liquid AI (LFM3 Omni / Audio)", "https://api.liquid.ai/openai/v1", "lfm3-omni-2b", true, false),
         new(AiProviderKind.Gemini, "Google Gemini", "https://generativelanguage.googleapis.com/v1beta", "gemini-2.5-flash", true, false),
         new(AiProviderKind.Anthropic, "Anthropic Claude", "https://api.anthropic.com/v1", "claude-3-5-sonnet-latest", true, false),
         new(AiProviderKind.CustomOpenAiCompatible, "Custom (OpenAI-Compatible)", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile", true, false)
@@ -183,7 +185,7 @@ public static class AiProviderDefaults
 public sealed class AiAssistantSettings
 {
     public const string DefaultPersonalityPrompt =
-        "You are StudySuit AI, an accurate, rigorously grounded academic tutor and PDF study assistant. " +
+        "You are StudyMateAI, an accurate, rigorously grounded academic tutor and PDF study assistant. " +
         "Respond naturally to simple greetings without invoking tools. " +
         "CRITICAL GROUNDING RULE: Never generate fake facts, made-up statistics, or fabricated state rankings. " +
         "Always cite authentic official primary sources (e.g. NCRB, RBI, Census of India, PIB, NFHS). " +
@@ -196,7 +198,7 @@ public sealed class AiAssistantSettings
     public const string DefaultResponseFormatPrompt =
         """
         RESPONSE FORMAT & ADVANCED UI SPECIFICATION (MANDATORY):
-        Your output is rendered by StudySuit's rich native Markdown + UI engine. NEVER draw ASCII boxes (┌ ─ ┐ │ └ ┘), ASCII tables, or ASCII bar charts inside text or code blocks. Use the structured blocks below instead:
+        Your output is rendered by StudyMateAI's rich native Markdown + UI engine. NEVER draw ASCII boxes (┌ ─ ┐ │ └ ┘), ASCII tables, or ASCII bar charts inside text or code blocks. Use the structured blocks below instead:
 
         1. Rich Text, Callouts & Tables:
            - Use clean Markdown headings (#, ##, ###), bullet/numbered lists, **bold**, *italic*, `inline code`, and [links](https://...).
@@ -205,9 +207,9 @@ public sealed class AiAssistantSettings
              > [!IMPORTANT] Critical rule or exam point
              > [!WARNING] Common mistake to avoid
            - Use standard Markdown tables (`| Column A | Column B |`) for structured data.
-           - Direct Internet Images (ONLY WHEN EXPLICITLY REQUESTED):
-             `![Descriptive caption](https://upload.wikimedia.org/.../image.jpg)`
-             (Only embed direct verified HTTPS image links from Wikimedia Commons or official sources; never invent fake URLs).
+           - Direct Internet Images:
+             `![Descriptive caption](https://...)`
+             (CRITICAL: Always start with the leading '!' exclamation mark. NEVER omit '!', otherwise it renders as a text hyperlink instead of displaying the image!).
 
         2. Math Equations (LaTeX):
            - Inline math: `$E = mc^2$` or `$\frac{dy}{dx}$`
@@ -240,6 +242,19 @@ public sealed class AiAssistantSettings
            ```metrics
            [{"label":"Area Share","value":"~43%","note":"Northern Plains"},{"label":"Crop Yield","value":"High","note":"Wheat, Rice, Sugarcane"}]
            ```
+
+        7. Mermaid Diagrams (fenced `mermaid` block) — for flowcharts, systems, sequences, hierarchies:
+           ```mermaid
+           graph TD
+             A[DNA Transcription] --> B[mRNA Processing]
+             B --> C[Ribosome Translation]
+             C --> D[Functional Protein]
+           ```
+
+        8. Interactive 3D Models (Sketchfab CDN) — whenever explaining cells, biology, human anatomy, organs, astronomy, or physical structures:
+           Always call the tool `search_sketchfab_3d` with the concept name (e.g. `{"query": "solar system"}`).
+           Embed ONLY the exact verified embed URL returned by the `search_sketchfab_3d` tool.
+           CRITICAL: NEVER make up, invent, or guess a `{model_id}`. Fake or guessed URLs result in Error 404. Use ONLY real verified URLs from `search_sketchfab_3d`.
         """;
 
     public AiProviderKind Provider { get; set; } = AiProviderKind.OllamaLocal;
@@ -262,12 +277,32 @@ public sealed class AiAssistantSettings
     public int MaxWebResults { get; set; } = 4;
     public WebSearchProviderKind WebSearchProvider { get; set; } = WebSearchProviderKind.BuiltInWeb;
     public string WebSearchApiKey { get; set; } = string.Empty;
+    public bool TalkMode { get; set; } = false;
+    public string TalkModelName { get; set; } = string.Empty;
+    public string OmniVoice { get; set; } = "female";
+    public string OmniAudioFormat { get; set; } = "wav";
+    public bool AutoReferenceOpenPdf { get; set; } = false;
+
+    // Agentic Tools Control Toggles
+    public bool EnableWebSearch { get; set; } = true;
+    public bool EnableFetchWebpage { get; set; } = true;
+    public bool EnableSketchfab3D { get; set; } = true;
+    public bool EnableMermaidDiagrams { get; set; } = true;
+    public bool EnableCharts { get; set; } = true;
+    public bool EnablePdfTools { get; set; } = true;
+    public bool EnableImageSearch { get; set; } = true;
+
+    public string EffectiveTalkModelName =>
+        !string.IsNullOrWhiteSpace(TalkModelName)
+            ? TalkModelName.Trim()
+            : (Provider == AiProviderKind.LlamaCppLocal ? "LiquidAI/LFM3-Omni-2B-GGUF:Q4_K_M" : (!string.IsNullOrWhiteSpace(ModelName) ? ModelName.Trim() : "LiquidAI/LFM3-Omni-2B-GGUF:Q4_K_M"));
 
     public AiAssistantSettings Clone() => new()
     {
         Provider = Provider,
         BaseUrl = BaseUrl,
         ModelName = ModelName,
+        TalkModelName = TalkModelName,
         ApiKey = ApiKey,
         Temperature = Temperature,
         MaxTokens = MaxTokens,
@@ -283,7 +318,18 @@ public sealed class AiAssistantSettings
         UseInternetByDefault = UseInternetByDefault,
         MaxWebResults = MaxWebResults,
         WebSearchProvider = WebSearchProvider,
-        WebSearchApiKey = WebSearchApiKey
+        WebSearchApiKey = WebSearchApiKey,
+        TalkMode = TalkMode,
+        OmniVoice = OmniVoice,
+        OmniAudioFormat = OmniAudioFormat,
+        AutoReferenceOpenPdf = AutoReferenceOpenPdf,
+        EnableWebSearch = EnableWebSearch,
+        EnableFetchWebpage = EnableFetchWebpage,
+        EnableSketchfab3D = EnableSketchfab3D,
+        EnableMermaidDiagrams = EnableMermaidDiagrams,
+        EnableCharts = EnableCharts,
+        EnablePdfTools = EnablePdfTools,
+        EnableImageSearch = EnableImageSearch
     };
 }
 
@@ -295,6 +341,15 @@ public sealed class WebSourceReference
     public string Snippet { get; set; } = string.Empty;
 }
 
+public sealed class WebImageReference
+{
+    public int Index { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string ImageUrl { get; set; } = string.Empty;
+    public string SourcePageUrl { get; set; } = string.Empty;
+    public string MarkdownSnippet => $"![{Title}]({ImageUrl})";
+}
+
 public sealed partial class AiChatMessage : ObservableObject
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -302,6 +357,9 @@ public sealed partial class AiChatMessage : ObservableObject
 
     [ObservableProperty]
     private string _content = string.Empty;
+
+    [ObservableProperty]
+    private bool _isStreaming;
 
     [ObservableProperty]
     private bool _usedPdfContext;
@@ -315,14 +373,28 @@ public sealed partial class AiChatMessage : ObservableObject
     [ObservableProperty]
     private bool _isSpeaking;
 
+    [ObservableProperty]
+    private bool _hasAudio;
+
+    [ObservableProperty]
+    private bool _hasUserAudio;
+
+    public byte[]? AudioBytes { get; set; }
+    public string? AudioFormat { get; set; }
+
+    public byte[]? UserInputAudioBytes { get; set; }
+    public string? UserInputAudioFormat { get; set; } = "wav";
+
     public DateTime TimestampUtc { get; set; } = DateTime.UtcNow;
     public bool IsError { get; set; }
     public bool IsWelcome { get; set; }
     public ObservableCollection<WebSourceReference> Sources { get; set; } = [];
+    public ObservableCollection<WebImageReference> Images { get; set; } = [];
 
     public bool IsUser => string.Equals(Role, "user", StringComparison.OrdinalIgnoreCase);
     public bool IsAssistant => !IsUser;
     public bool HasSources => Sources.Count > 0;
+    public bool HasImages => Images.Count > 0;
     public string TimeDisplay => TimestampUtc.ToLocalTime().ToString("HH:mm");
 }
 
@@ -332,6 +404,9 @@ public sealed partial class AiChatSession : ObservableObject
 
     [ObservableProperty]
     private string _title = "New Study Chat";
+
+    [ObservableProperty]
+    private string _firstSearchedTopic = string.Empty;
 
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
@@ -343,8 +418,36 @@ public sealed partial class AiChatSession : ObservableObject
 
     public ObservableCollection<AiChatMessage> Messages { get; set; } = [];
 
-    public string DateDisplay => LastUpdatedAtUtc.ToLocalTime().ToString("MMM dd, yyyy HH:mm");
-    public string TimeDisplay => LastUpdatedAtUtc.ToLocalTime().ToString("HH:mm");
+    public string PreviewText => Messages.LastOrDefault(m => !string.IsNullOrWhiteSpace(m.Content))?.Content ?? "Empty conversation";
+
+    public string DateDisplay => LastUpdatedAtUtc.ToLocalTime().ToString("MMM dd, yyyy hh:mm tt");
+    public string TimeDisplay => LastUpdatedAtUtc.ToLocalTime().ToString("hh:mm tt");
+
+    public string FormattedTimeDisplay
+    {
+        get
+        {
+            var local = LastUpdatedAtUtc.ToLocalTime();
+            var date = local.Date;
+            var today = DateTime.Today;
+            string timePart = local.ToString("h:mm tt");
+
+            if (date == today)
+            {
+                return $"Today, {timePart}";
+            }
+            if (date == today.AddDays(-1))
+            {
+                return $"Yesterday, {timePart}";
+            }
+            if (date.Year == today.Year)
+            {
+                return $"{local:MMM dd}, {timePart}";
+            }
+            return $"{local:MMM dd, yyyy}, {timePart}";
+        }
+    }
+
     public string RelativeTimeDisplay
     {
         get
@@ -356,6 +459,111 @@ public sealed partial class AiChatSession : ObservableObject
             if (diff.TotalDays < 7) return $"{(int)diff.TotalDays}d ago";
             return LastUpdatedAtUtc.ToLocalTime().ToString("MMM dd");
         }
+    }
+
+    public string DisplayTopic
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(FirstSearchedTopic))
+            {
+                return FirstSearchedTopic;
+            }
+            if (!string.IsNullOrWhiteSpace(Title) && Title != "New Study Chat")
+            {
+                return Title;
+            }
+            return ExtractFirstSearchedTopic(Messages, Title);
+        }
+    }
+
+    partial void OnTitleChanged(string value)
+    {
+        OnPropertyChanged(nameof(DisplayTopic));
+    }
+
+    partial void OnFirstSearchedTopicChanged(string value)
+    {
+        OnPropertyChanged(nameof(DisplayTopic));
+    }
+
+    partial void OnLastUpdatedAtUtcChanged(DateTime value)
+    {
+        OnPropertyChanged(nameof(DateDisplay));
+        OnPropertyChanged(nameof(TimeDisplay));
+        OnPropertyChanged(nameof(FormattedTimeDisplay));
+        OnPropertyChanged(nameof(RelativeTimeDisplay));
+    }
+
+    public static string ExtractFirstSearchedTopic(IEnumerable<AiChatMessage> messages, string? fallbackTitle = null)
+    {
+        var firstUser = messages.FirstOrDefault(m => m.IsUser && !m.IsWelcome && !string.IsNullOrWhiteSpace(m.Content));
+        if (firstUser is null)
+        {
+            return !string.IsNullOrWhiteSpace(fallbackTitle) && fallbackTitle != "New Study Chat"
+                ? fallbackTitle
+                : "Study Chat";
+        }
+
+        string content = firstUser.Content.Trim();
+
+        // 1. Circle to Search: [Circled on Page X of 'Title']: "Snippet"\n\nInstruction
+        if (content.StartsWith("[Circled", StringComparison.OrdinalIgnoreCase))
+        {
+            int qStart = content.IndexOf('\"');
+            int qEnd = qStart >= 0 ? content.IndexOf('\"', qStart + 1) : -1;
+            if (qStart >= 0 && qEnd > qStart)
+            {
+                string snippet = content.Substring(qStart + 1, qEnd - qStart - 1).Trim();
+                snippet = CleanTopicText(snippet);
+                if (!string.IsNullOrWhiteSpace(snippet))
+                {
+                    int pIndex = content.IndexOf("Page ", StringComparison.OrdinalIgnoreCase);
+                    string pageSuffix = string.Empty;
+                    if (pIndex >= 0)
+                    {
+                        int pEnd = content.IndexOfAny([' ', ']', ':', '\r', '\n'], pIndex + 5);
+                        if (pEnd > pIndex)
+                        {
+                            string pNum = content[(pIndex + 5)..pEnd].Trim();
+                            if (int.TryParse(pNum, out int p))
+                            {
+                                pageSuffix = $" (p.{p})";
+                            }
+                        }
+                    }
+
+                    return $"🔍 {snippet}{pageSuffix}";
+                }
+            }
+
+            int bracketEnd = content.IndexOf(']');
+            if (bracketEnd > 0)
+            {
+                int pIndex = content.IndexOf("Page ", StringComparison.OrdinalIgnoreCase);
+                string pagePart = pIndex >= 0 ? content.Substring(pIndex, Math.Min(10, bracketEnd - pIndex)).Trim() : "Diagram";
+                return $"🔍 Circled {pagePart}";
+            }
+
+            return "🔍 Circled Search";
+        }
+
+        // 2. Regular user query
+        return CleanTopicText(content);
+    }
+
+    private static string CleanTopicText(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+
+        string cleaned = text.Replace("\r\n", " ").Replace('\r', ' ').Replace('\n', ' ').Trim();
+        while (cleaned.Contains("  "))
+        {
+            cleaned = cleaned.Replace("  ", " ");
+        }
+
+        cleaned = cleaned.TrimStart('#', ' ', '*', '_');
+        return cleaned;
     }
 }
 

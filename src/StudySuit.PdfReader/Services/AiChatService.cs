@@ -4,16 +4,23 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using StudySuit.PdfReader.Models;
 
 namespace StudySuit.PdfReader.Services;
 
 public sealed class AiToolHost
 {
-    public bool AllowWebSearch { get; init; }
+    public bool AllowWebSearch { get; init; } = true;
+    public bool AllowFetchWebpage { get; init; } = true;
+    public bool AllowSketchfab3D { get; init; } = true;
+    public bool AllowImageSearch { get; init; } = true;
     public bool HasOpenPdf { get; init; }
     public bool AllowTemporalTools { get; init; } = true;
     public Func<string, CancellationToken, Task<(string ResultText, IReadOnlyList<WebSourceReference> Sources)>>? ExecuteWebSearchAsync { get; init; }
+    public Func<string, CancellationToken, Task<string>>? ExecuteFetchWebpageAsync { get; init; }
+    public Func<string, CancellationToken, Task<(string ResultText, SketchfabModelReference? Model)>>? ExecuteSketchfab3DSearchAsync { get; init; }
+    public Func<string, CancellationToken, Task<(string ResultText, IReadOnlyList<WebImageReference> Images)>>? ExecuteImageSearchAsync { get; init; }
     public Func<string, CancellationToken, Task<string>>? ExecutePdfSearchAsync { get; init; }
     public Func<int, CancellationToken, Task<string>>? ExecuteReadPdfPageAsync { get; init; }
     public Func<string?, CancellationToken, Task<string>>? ExecuteGetCurrentTimeAsync { get; init; }
@@ -22,6 +29,9 @@ public sealed class AiToolHost
     public Action<string>? OnToolStatus { get; init; }
     public Action<bool, bool, bool>? OnToolUsageRecorded { get; init; }
     public Action<IReadOnlyList<WebSourceReference>>? OnWebSourcesCollected { get; init; }
+    public Action<IReadOnlyList<WebImageReference>>? OnImagesCollected { get; init; }
+    public Action<SketchfabModelReference>? On3DModelCollected { get; init; }
+    public Action<byte[], string>? OnAudioReceived { get; init; }
 }
 
 public interface IAiChatService
@@ -42,11 +52,23 @@ public interface IAiChatService
         string? pdfContext,
         AiToolHost? toolHost,
         Action<string>? onStreamDelta = null,
+        byte[]? inputAudioBytes = null,
+        string inputAudioFormat = "wav",
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<string>> FetchAvailableModelsAsync(
         AiAssistantSettings settings,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<string>> FetchVoiceChatModelsAsync(
+        AiAssistantSettings settings,
+        CancellationToken cancellationToken = default);
+
+    Task<byte[]?> GenerateModelAudioSpeechAsync(
+        AiAssistantSettings settings,
+        string text,
+        string modelName,
+        CancellationToken ct = default);
 
     Task<(bool Success, string Message)> TestConnectionAsync(
         AiAssistantSettings settings,
@@ -81,6 +103,53 @@ public sealed class AiChatService : IAiChatService
         return CasualGreetings.Contains(normalized);
     }
 
+    public static string SanitizeSpokenTranscript(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return string.Empty;
+        }
+
+        string text = input;
+
+        // Strip <tool_call> ... </tool_call> or unclosed <tool_call> while streaming
+        text = Regex.Replace(text, @"<tool_call>[\s\S]*?(?:</tool_call>|$)", "", RegexOptions.IgnoreCase);
+
+        // Strip <function=...> ... </function> or unclosed
+        text = Regex.Replace(text, @"<function[^>]*>[\s\S]*?(?:</function>|$)", "", RegexOptions.IgnoreCase);
+
+        // Strip <parameter=...> ... </parameter> or unclosed
+        text = Regex.Replace(text, @"<parameter[^>]*>[\s\S]*?(?:</parameter>|$)", "", RegexOptions.IgnoreCase);
+
+        // Strip <tool_response> ... </tool_response> or unclosed
+        text = Regex.Replace(text, @"<tool_response>[\s\S]*?(?:</tool_response>|$)", "", RegexOptions.IgnoreCase);
+
+        // Strip [TOOL_CALLS] ... [/TOOL_CALLS]
+        text = Regex.Replace(text, @"\[TOOL_CALLS?\][\s\S]*?(?:\[/TOOL_CALLS?\]|$)", "", RegexOptions.IgnoreCase);
+
+        // Strip any residual HTML/XML tags
+        text = Regex.Replace(text, @"<[^>]+>", "");
+
+        // Strip cards and chart code blocks from speech
+        text = Regex.Replace(text, @"```(?:cards|chart|json)?[\s\S]*?(?:```|$)", "", RegexOptions.IgnoreCase);
+
+        // Strip any remaining markdown code fences
+        text = Regex.Replace(text, @"```[\s\S]*?(?:```|$)", "");
+
+        // Normalize spaces and extra blank lines
+        text = Regex.Replace(text, @"[ \t]+", " ");
+        text = Regex.Replace(text, @"\n{3,}", "\n\n");
+
+        return text.Trim();
+    }
+
+    public static bool IsOmniAudioModel(string? modelName)
+    {
+        if (string.IsNullOrWhiteSpace(modelName)) return false;
+        string m = modelName.ToLowerInvariant();
+        return m.Contains("lfm") || m.Contains("liquid") || m.Contains("audio") || m.Contains("realtime") || m.Contains("omni") || m.Contains("voice") || m.Contains("gpt-4o-mini-audio");
+    }
+
     public Task<string> SendChatAsync(
         AiAssistantSettings settings,
         IReadOnlyList<AiChatMessage> history,
@@ -92,7 +161,7 @@ public sealed class AiChatService : IAiChatService
     {
         ValidateSettings(settings);
         string enrichedUserPrompt = BuildEnrichedUserPrompt(userPrompt, pdfContext, webSources);
-        return DispatchSinglePassAsync(settings, history, enrichedUserPrompt, onStreamDelta, cancellationToken);
+        return DispatchSinglePassAsync(settings, history, enrichedUserPrompt, toolHost: null, onStreamDelta, inputAudioBytes: null, inputAudioFormat: "wav", cancellationToken);
     }
 
     public async Task<string> SendChatWithToolsAsync(
@@ -102,13 +171,16 @@ public sealed class AiChatService : IAiChatService
         string? pdfContext,
         AiToolHost? toolHost,
         Action<string>? onStreamDelta = null,
+        byte[]? inputAudioBytes = null,
+        string inputAudioFormat = "wav",
         CancellationToken cancellationToken = default)
     {
         ValidateSettings(settings);
 
-        bool casual = IsCasualMessage(userPrompt);
-        bool enableTools = toolHost is not null && !casual && (toolHost.HasOpenPdf || toolHost.AllowWebSearch || toolHost.AllowTemporalTools);
-        string effectivePdfContext = casual ? string.Empty : (pdfContext ?? string.Empty);
+        bool isAudioTurn = inputAudioBytes is { Length: > 0 } || settings.TalkMode || IsOmniAudioModel(settings.ModelName);
+        bool casual = !isAudioTurn && inputAudioBytes is null && IsCasualMessage(userPrompt);
+        bool enableTools = !isAudioTurn && toolHost is not null && !casual && (toolHost.HasOpenPdf || toolHost.AllowWebSearch || toolHost.AllowImageSearch || toolHost.AllowTemporalTools);
+        string effectivePdfContext = (casual || isAudioTurn) ? string.Empty : (pdfContext ?? string.Empty);
 
         if (!string.IsNullOrWhiteSpace(effectivePdfContext))
         {
@@ -119,17 +191,17 @@ public sealed class AiChatService : IAiChatService
             ? userPrompt.Trim()
             : BuildEnrichedUserPrompt(userPrompt, effectivePdfContext, []);
 
-        if (!enableTools || toolHost is null)
+        if (!enableTools)
         {
-            return await DispatchSinglePassAsync(settings, history, initialUserPrompt, onStreamDelta, cancellationToken);
+            return await DispatchSinglePassAsync(settings, history, initialUserPrompt, toolHost, onStreamDelta, inputAudioBytes, inputAudioFormat, cancellationToken);
         }
 
         return settings.Provider switch
         {
             AiProviderKind.OllamaLocal => await SendOllamaWithToolsAsync(settings, history, initialUserPrompt, toolHost, onStreamDelta, cancellationToken),
-            AiProviderKind.Gemini => await SendGeminiWithToolsAsync(settings, history, initialUserPrompt, toolHost, onStreamDelta, cancellationToken),
+            AiProviderKind.Gemini => await SendGeminiWithToolsAsync(settings, history, initialUserPrompt, toolHost, onStreamDelta, inputAudioBytes, inputAudioFormat, cancellationToken),
             AiProviderKind.Anthropic => await SendAnthropicWithToolsAsync(settings, history, initialUserPrompt, toolHost, onStreamDelta, cancellationToken),
-            _ => await SendOpenAiWithToolsAsync(settings, history, initialUserPrompt, toolHost, onStreamDelta, cancellationToken)
+            _ => await SendOpenAiWithToolsAsync(settings, history, initialUserPrompt, toolHost, onStreamDelta, inputAudioBytes, inputAudioFormat, cancellationToken)
         };
     }
 
@@ -137,16 +209,234 @@ public sealed class AiChatService : IAiChatService
         AiAssistantSettings settings,
         IReadOnlyList<AiChatMessage> history,
         string enrichedUserPrompt,
+        AiToolHost? toolHost,
         Action<string>? onStreamDelta,
+        byte[]? inputAudioBytes,
+        string inputAudioFormat,
         CancellationToken ct)
     {
         return settings.Provider switch
         {
             AiProviderKind.OllamaLocal => SendOllamaWithToolsAsync(settings, history, enrichedUserPrompt, toolHost: null, onStreamDelta, ct),
-            AiProviderKind.Gemini => SendGeminiWithToolsAsync(settings, history, enrichedUserPrompt, toolHost: null, onStreamDelta, ct),
+            AiProviderKind.Gemini => SendGeminiWithToolsAsync(settings, history, enrichedUserPrompt, toolHost, onStreamDelta, inputAudioBytes, inputAudioFormat, ct),
             AiProviderKind.Anthropic => SendAnthropicWithToolsAsync(settings, history, enrichedUserPrompt, toolHost: null, onStreamDelta, ct),
-            _ => SendOpenAiWithToolsAsync(settings, history, enrichedUserPrompt, toolHost: null, onStreamDelta, ct)
+            _ => SendOpenAiWithToolsAsync(settings, history, enrichedUserPrompt, toolHost, onStreamDelta, inputAudioBytes, inputAudioFormat, ct)
         };
+    }
+
+    public async Task<byte[]?> GenerateModelAudioSpeechAsync(
+        AiAssistantSettings settings,
+        string text,
+        string modelName,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+
+        string cleanText = SanitizeSpokenTranscript(text);
+        if (string.IsNullOrWhiteSpace(cleanText)) return null;
+
+        if (cleanText.Length > 2500)
+        {
+            cleanText = cleanText[..2500];
+        }
+
+        string baseUrl = NormalizeBaseUrl(settings.BaseUrl, settings.Provider);
+        string effectiveModel = !string.IsNullOrWhiteSpace(modelName) ? modelName.Trim() : settings.EffectiveTalkModelName;
+
+        // Voice normalization: llama.cpp / Liquid models only support "female", "male" or empty
+        bool isLiquidOrLlama = settings.Provider == AiProviderKind.LlamaCppLocal ||
+                               effectiveModel.Contains("lfm", StringComparison.OrdinalIgnoreCase) ||
+                               effectiveModel.Contains("liquid", StringComparison.OrdinalIgnoreCase) ||
+                               effectiveModel.Contains("llama", StringComparison.OrdinalIgnoreCase);
+
+        string voice = settings.OmniVoice;
+        if (isLiquidOrLlama)
+        {
+            voice = string.Equals(voice, "male", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(voice, "echo", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(voice, "onyx", StringComparison.OrdinalIgnoreCase)
+                ? "male"
+                : "female";
+        }
+        else if (string.IsNullOrWhiteSpace(voice))
+        {
+            voice = "alloy";
+        }
+
+        // Build list of candidate endpoints to probe in priority order
+        var candidateEndpoints = new List<string>();
+
+        // 1. Configured base URL
+        if (!string.IsNullOrWhiteSpace(baseUrl))
+        {
+            candidateEndpoints.Add($"{baseUrl.TrimEnd('/')}/audio/speech");
+            if (!baseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
+            {
+                candidateEndpoints.Add($"{baseUrl.TrimEnd('/')}/v1/audio/speech");
+            }
+        }
+
+        // 2. Local llama.cpp default endpoints (port 9931)
+        candidateEndpoints.Add("http://127.0.0.1:9931/v1/audio/speech");
+        candidateEndpoints.Add("http://localhost:9931/v1/audio/speech");
+
+        // 3. Fallback ports (8080)
+        candidateEndpoints.Add("http://127.0.0.1:8080/v1/audio/speech");
+        candidateEndpoints.Add("http://localhost:8080/v1/audio/speech");
+
+        // 4. llama.cpp /tts endpoint
+        if (!string.IsNullOrWhiteSpace(baseUrl))
+        {
+            string ttsUrl = baseUrl.TrimEnd('/');
+            if (ttsUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
+            {
+                ttsUrl = ttsUrl[..ttsUrl.LastIndexOf("/v1", StringComparison.OrdinalIgnoreCase)];
+            }
+            candidateEndpoints.Add($"{ttsUrl}/tts");
+        }
+        candidateEndpoints.Add("http://127.0.0.1:9931/tts");
+
+        var distinctEndpoints = candidateEndpoints.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+        // Voices to try
+        var voiceCandidates = isLiquidOrLlama
+            ? new[] { voice, voice == "female" ? "male" : "female", "" }
+            : new[] { voice, "alloy", "" };
+
+        foreach (string endpoint in distinctEndpoints)
+        {
+            foreach (string v in voiceCandidates)
+            {
+                try
+                {
+                    var payload = new Dictionary<string, object>
+                    {
+                        ["model"] = effectiveModel,
+                        ["input"] = cleanText,
+                        ["response_format"] = "wav"
+                    };
+                    if (!string.IsNullOrEmpty(v))
+                    {
+                        payload["voice"] = v;
+                    }
+
+                    using var req = new HttpRequestMessage(HttpMethod.Post, endpoint)
+                    {
+                        Content = CreateJsonContent(payload)
+                    };
+
+                    if (!string.IsNullOrWhiteSpace(settings.ApiKey))
+                    {
+                        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.ApiKey.Trim());
+                    }
+
+                    using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    cts.CancelAfter(TimeSpan.FromSeconds(20));
+
+                    using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseContentRead, cts.Token).ConfigureAwait(false);
+                    if (resp.IsSuccessStatusCode)
+                    {
+                        byte[] audioBytes = await resp.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+                        if (audioBytes is { Length: > 100 })
+                        {
+                            return audioBytes;
+                        }
+                    }
+                    else if (resp.StatusCode == System.Net.HttpStatusCode.BadRequest)
+                    {
+                        // Voice issue (e.g. unknown voice), try next voice candidate on same endpoint
+                        continue;
+                    }
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch
+                {
+                    // Network failure / endpoint unreachable, move to next endpoint
+                    break;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    public async Task<IReadOnlyList<string>> FetchVoiceChatModelsAsync(
+        AiAssistantSettings settings,
+        CancellationToken cancellationToken = default)
+    {
+        var voiceModels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // 1. Fetch from currently configured provider endpoint
+        try
+        {
+            var regularModels = await FetchAvailableModelsAsync(settings, cancellationToken).ConfigureAwait(false);
+            foreach (var m in regularModels)
+            {
+                voiceModels.Add(m);
+            }
+        }
+        catch
+        {
+        }
+
+        // 2. Also probe local ports: 9931 (llama.cpp) and 8080 and 1234
+        var localProbes = new[]
+        {
+            "http://127.0.0.1:9931/v1/models",
+            "http://localhost:9931/v1/models",
+            "http://127.0.0.1:8080/v1/models",
+            "http://127.0.0.1:1234/v1/models"
+        };
+
+        foreach (var probeUrl in localProbes)
+        {
+            try
+            {
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                cts.CancelAfter(TimeSpan.FromSeconds(3));
+
+                using var req = new HttpRequestMessage(HttpMethod.Get, probeUrl);
+                using var resp = await _http.SendAsync(req, cts.Token).ConfigureAwait(false);
+                if (resp.IsSuccessStatusCode)
+                {
+                    string body = await resp.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
+                    using var doc = JsonDocument.Parse(body);
+                    if (doc.RootElement.TryGetProperty("data", out var arr) && arr.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var m in arr.EnumerateArray())
+                        {
+                            if (m.TryGetProperty("id", out var idProp) && idProp.GetString() is string id && !string.IsNullOrWhiteSpace(id))
+                            {
+                                voiceModels.Add(id);
+                            }
+                        }
+                    }
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        // 3. Known omni/voice models to ensure availability
+        if (voiceModels.Count == 0 || !voiceModels.Any(m => m.Contains("lfm", StringComparison.OrdinalIgnoreCase) || m.Contains("liquid", StringComparison.OrdinalIgnoreCase)))
+        {
+            voiceModels.Add("LiquidAI/LFM3-Omni-2B-GGUF:Q4_K_M");
+        }
+        if (settings.Provider == AiProviderKind.OpenAi)
+        {
+            voiceModels.Add("gpt-4o-audio-preview");
+            voiceModels.Add("gpt-4o-mini-audio-preview");
+        }
+
+        // Order list: Omni & audio models FIRST, then alphabetical
+        return voiceModels
+            .OrderByDescending(m => IsOmniAudioModel(m) ? 2 : (m.Contains("gguf", StringComparison.OrdinalIgnoreCase) ? 1 : 0))
+            .ThenBy(m => m, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     public async Task<IReadOnlyList<string>> FetchAvailableModelsAsync(
@@ -211,6 +501,16 @@ public sealed class AiChatService : IAiChatService
                     "claude-3-5-sonnet-latest",
                     "claude-3-5-haiku-latest",
                     "claude-3-7-sonnet-latest"
+                ];
+
+            case AiProviderKind.LiquidAi:
+                return
+                [
+                    "lfm3-omni-2b",
+                    "lfm3-audio-2b",
+                    "lfm-40b",
+                    "lfm-7b",
+                    "lfm-3b"
                 ];
 
             default:
@@ -486,12 +786,17 @@ public sealed class AiChatService : IAiChatService
         string userPrompt,
         AiToolHost? toolHost,
         Action<string>? onStreamDelta,
-        CancellationToken ct)
+        byte[]? inputAudioBytes = null,
+        string inputAudioFormat = "wav",
+        CancellationToken ct = default)
     {
         string baseUrl = NormalizeBaseUrl(settings.BaseUrl, settings.Provider);
-        var messages = BuildBaseChatMessages(settings, history, userPrompt);
-        var tools = BuildOpenAiToolSchemas(toolHost);
+        bool isOmniAudio = settings.TalkMode || IsOmniAudioModel(settings.ModelName) || inputAudioBytes is { Length: > 0 };
+        var messages = BuildBaseChatMessages(settings, history, userPrompt, inputAudioBytes, inputAudioFormat);
+        var tools = isOmniAudio ? [] : BuildOpenAiToolSchemas(toolHost);
         bool useTools = tools.Count > 0;
+        using var audioAccumulator = new MemoryStream();
+        string resolvedAudioFormat = string.IsNullOrWhiteSpace(settings.OmniAudioFormat) ? "wav" : settings.OmniAudioFormat.ToLowerInvariant();
 
         for (int round = 0; round <= MaxToolRounds; round++)
         {
@@ -504,6 +809,19 @@ public sealed class AiChatService : IAiChatService
                 ["max_tokens"] = settings.MaxTokens,
                 ["stream"] = streamThisRound
             };
+
+            if (isOmniAudio)
+            {
+                payload["modalities"] = new[] { "text", "audio" };
+                if (settings.Provider != AiProviderKind.LiquidAi)
+                {
+                    payload["audio"] = new
+                    {
+                        voice = string.IsNullOrWhiteSpace(settings.OmniVoice) ? "alloy" : settings.OmniVoice.ToLowerInvariant(),
+                        format = resolvedAudioFormat
+                    };
+                }
+            }
 
             if (useTools)
             {
@@ -537,12 +855,31 @@ public sealed class AiChatService : IAiChatService
                     continue;
                 }
 
+                if (isOmniAudio && (errBody.Contains("modalities", StringComparison.OrdinalIgnoreCase) ||
+                                    errBody.Contains("audio", StringComparison.OrdinalIgnoreCase)))
+                {
+                    isOmniAudio = false;
+                    continue;
+                }
+
                 EnsureSuccess(resp, errBody);
             }
 
             var sb = new StringBuilder();
             var toolMap = new Dictionary<int, OpenAiToolCallCollector>();
             var toolList = new List<OpenAiToolCallCollector>();
+
+            Action<byte[], string> onAudioChunk = (chunk, fmt) =>
+            {
+                if (chunk.Length > 0)
+                {
+                    lock (audioAccumulator)
+                    {
+                        audioAccumulator.Write(chunk, 0, chunk.Length);
+                        resolvedAudioFormat = fmt;
+                    }
+                }
+            };
 
             if (streamThisRound)
             {
@@ -563,12 +900,14 @@ public sealed class AiChatService : IAiChatService
                             break;
                         }
 
-                        ProcessOpenAiStreamDelta(data, sb, toolMap, toolList, onStreamDelta);
+                        ProcessOpenAiStreamDelta(data, sb, toolMap, toolList, onStreamDelta, onAudioChunk);
                     }
                     else if (line.TrimStart().StartsWith('{'))
                     {
                         // Non-SSE fallback if endpoint ignores stream:true
-                        ProcessOpenAiCompletionMessage(line, sb, toolList, onStreamDelta);
+                        string rest = await reader.ReadToEndAsync(ct).ConfigureAwait(false);
+                        string fullJson = string.IsNullOrEmpty(rest) ? line : line + "\n" + rest;
+                        ProcessOpenAiCompletionMessage(fullJson, sb, toolList, onStreamDelta, onAudioChunk);
                         break;
                     }
                 }
@@ -576,11 +915,15 @@ public sealed class AiChatService : IAiChatService
             else
             {
                 string body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-                ProcessOpenAiCompletionMessage(body, sb, toolList, onDelta: null);
+                ProcessOpenAiCompletionMessage(body, sb, toolList, onDelta: null, onAudioChunk);
             }
 
             if (toolList.Count == 0 || toolHost is null || round == MaxToolRounds)
             {
+                if (audioAccumulator.Length > 0)
+                {
+                    toolHost?.OnAudioReceived?.Invoke(audioAccumulator.ToArray(), resolvedAudioFormat);
+                }
                 return sb.ToString().Trim();
             }
 
@@ -639,7 +982,8 @@ public sealed class AiChatService : IAiChatService
         StringBuilder sb,
         Dictionary<int, OpenAiToolCallCollector> toolMap,
         List<OpenAiToolCallCollector> toolList,
-        Action<string>? onDelta)
+        Action<string>? onDelta,
+        Action<byte[], string>? onAudioChunk = null)
     {
         try
         {
@@ -655,6 +999,51 @@ public sealed class AiChatService : IAiChatService
             if (!choice.TryGetProperty("delta", out var delta))
             {
                 return;
+            }
+
+            if (delta.TryGetProperty("audio", out var audioObj) || choice.TryGetProperty("audio", out audioObj))
+            {
+                if (audioObj.ValueKind == JsonValueKind.String)
+                {
+                    string b64 = audioObj.GetString() ?? string.Empty;
+                    if (!string.IsNullOrEmpty(b64))
+                    {
+                        try
+                        {
+                            byte[] chunk = Convert.FromBase64String(b64);
+                            onAudioChunk?.Invoke(chunk, "wav");
+                        }
+                        catch { }
+                    }
+                }
+                else if (audioObj.ValueKind == JsonValueKind.Object)
+                {
+                    if ((audioObj.TryGetProperty("data", out var audioData) ||
+                         audioObj.TryGetProperty("audio", out audioData)) &&
+                        audioData.ValueKind == JsonValueKind.String)
+                    {
+                        string b64 = audioData.GetString() ?? string.Empty;
+                        if (!string.IsNullOrEmpty(b64))
+                        {
+                            try
+                            {
+                                byte[] chunk = Convert.FromBase64String(b64);
+                                onAudioChunk?.Invoke(chunk, "wav");
+                            }
+                            catch { }
+                        }
+                    }
+
+                    if ((audioObj.TryGetProperty("transcript", out var transProp) || delta.TryGetProperty("transcript", out transProp)) && transProp.ValueKind == JsonValueKind.String)
+                    {
+                        string transChunk = transProp.GetString() ?? string.Empty;
+                        if (!string.IsNullOrEmpty(transChunk))
+                        {
+                            sb.Append(transChunk);
+                            onDelta?.Invoke(transChunk);
+                        }
+                    }
+                }
             }
 
             if (delta.TryGetProperty("content", out var content) &&
@@ -710,7 +1099,8 @@ public sealed class AiChatService : IAiChatService
         string json,
         StringBuilder sb,
         List<OpenAiToolCallCollector> toolList,
-        Action<string>? onDelta)
+        Action<string>? onDelta,
+        Action<byte[], string>? onAudioChunk = null)
     {
         try
         {
@@ -728,12 +1118,60 @@ public sealed class AiChatService : IAiChatService
                 return;
             }
 
+            JsonElement audioObj = default;
+            bool hasAudio = msg.TryGetProperty("audio", out audioObj) || choice.TryGetProperty("audio", out audioObj) || doc.RootElement.TryGetProperty("audio", out audioObj);
+
+            if (hasAudio)
+            {
+                if (audioObj.ValueKind == JsonValueKind.String)
+                {
+                    string b64 = audioObj.GetString() ?? string.Empty;
+                    if (!string.IsNullOrEmpty(b64))
+                    {
+                        try
+                        {
+                            byte[] chunk = Convert.FromBase64String(b64);
+                            onAudioChunk?.Invoke(chunk, "wav");
+                        }
+                        catch { }
+                    }
+                }
+                else if (audioObj.ValueKind == JsonValueKind.Object)
+                {
+                    if ((audioObj.TryGetProperty("data", out var audioData) ||
+                         audioObj.TryGetProperty("audio", out audioData)) &&
+                        audioData.ValueKind == JsonValueKind.String)
+                    {
+                        string b64 = audioData.GetString() ?? string.Empty;
+                        if (!string.IsNullOrEmpty(b64))
+                        {
+                            try
+                            {
+                                byte[] chunk = Convert.FromBase64String(b64);
+                                onAudioChunk?.Invoke(chunk, "wav");
+                            }
+                            catch { }
+                        }
+                    }
+
+                    if (audioObj.TryGetProperty("transcript", out var transProp) && transProp.ValueKind == JsonValueKind.String && sb.Length == 0)
+                    {
+                        string trans = transProp.GetString()?.Trim() ?? string.Empty;
+                        if (!string.IsNullOrEmpty(trans))
+                        {
+                            sb.Append(trans);
+                            onDelta?.Invoke(trans);
+                        }
+                    }
+                }
+            }
+
             if (msg.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.String)
             {
                 string text = content.GetString()?.Trim() ?? string.Empty;
-                sb.Append(text);
-                if (!string.IsNullOrEmpty(text))
+                if (!string.IsNullOrEmpty(text) && sb.Length == 0)
                 {
+                    sb.Append(text);
                     onDelta?.Invoke(text);
                 }
             }
@@ -773,7 +1211,9 @@ public sealed class AiChatService : IAiChatService
         string userPrompt,
         AiToolHost? toolHost,
         Action<string>? onStreamDelta,
-        CancellationToken ct)
+        byte[]? inputAudioBytes = null,
+        string inputAudioFormat = "wav",
+        CancellationToken ct = default)
     {
         string baseUrl = NormalizeBaseUrl(settings.BaseUrl, settings.Provider);
         string model = settings.ModelName.Trim();
@@ -783,30 +1223,102 @@ public sealed class AiChatService : IAiChatService
         }
 
         var contents = new List<object>();
-        foreach (var (isUser, content) in NormalizeConversationTurns(history, userPrompt))
+        bool isOmniAudio = settings.TalkMode || IsOmniAudioModel(settings.ModelName) || inputAudioBytes is { Length: > 0 };
+
+        foreach (var msg in history.Where(m => !m.IsWelcome && !m.IsError))
         {
-            contents.Add(new
+            if (msg.IsUser)
             {
-                role = isUser ? "user" : "model",
-                parts = new[] { new { text = content } }
-            });
+                if (msg.HasUserAudio && msg.UserInputAudioBytes is { Length: > 0 })
+                {
+                    var parts = new List<object>();
+                    if (!string.IsNullOrWhiteSpace(msg.Content) && !msg.Content.StartsWith("🎤 [Spoken", StringComparison.OrdinalIgnoreCase))
+                    {
+                        parts.Add(new { text = msg.Content });
+                    }
+                    parts.Add(new
+                    {
+                        inlineData = new
+                        {
+                            mimeType = msg.UserInputAudioFormat == "mp3" ? "audio/mp3" : "audio/wav",
+                            data = Convert.ToBase64String(msg.UserInputAudioBytes)
+                        }
+                    });
+                    contents.Add(new { role = "user", parts });
+                }
+                else
+                {
+                    contents.Add(new { role = "user", parts = new[] { new { text = msg.Content } } });
+                }
+            }
+            else
+            {
+                string cleanContent = isOmniAudio ? SanitizeSpokenTranscript(msg.Content) : msg.Content;
+                if (!string.IsNullOrWhiteSpace(cleanContent))
+                {
+                    contents.Add(new { role = "model", parts = new[] { new { text = cleanContent } } });
+                }
+            }
         }
 
-        var funcDeclarations = BuildGeminiToolDeclarations(toolHost);
+        if (inputAudioBytes is { Length: > 0 })
+        {
+            var parts = new List<object>();
+            if (!string.IsNullOrWhiteSpace(userPrompt))
+            {
+                parts.Add(new { text = userPrompt });
+            }
+            parts.Add(new
+            {
+                inlineData = new
+                {
+                    mimeType = inputAudioFormat == "mp3" ? "audio/mp3" : "audio/wav",
+                    data = Convert.ToBase64String(inputAudioBytes)
+                }
+            });
+            contents.Add(new { role = "user", parts });
+        }
+        else if (!string.IsNullOrWhiteSpace(userPrompt))
+        {
+            contents.Add(new { role = "user", parts = new[] { new { text = userPrompt } } });
+        }
+
+        var funcDeclarations = isOmniAudio ? [] : BuildGeminiToolDeclarations(toolHost);
+        using var audioAccumulator = new MemoryStream();
+        string resolvedAudioFormat = "audio/wav";
 
         for (int round = 0; round <= MaxToolRounds; round++)
         {
-            var payload = new Dictionary<string, object>
-            {
-                ["contents"] = contents,
-                ["generationConfig"] = new
+            object genConfig = isOmniAudio
+                ? new
+                {
+                    temperature = settings.Temperature,
+                    maxOutputTokens = settings.MaxTokens,
+                    responseModalities = new[] { "TEXT", "AUDIO" },
+                    speechConfig = new
+                    {
+                        voiceConfig = new
+                        {
+                            prebuiltVoiceConfig = new
+                            {
+                                voiceName = string.IsNullOrWhiteSpace(settings.OmniVoice) ? "Puck" : settings.OmniVoice
+                            }
+                        }
+                    }
+                }
+                : new
                 {
                     temperature = settings.Temperature,
                     maxOutputTokens = settings.MaxTokens
-                }
+                };
+
+            var payload = new Dictionary<string, object>
+            {
+                ["contents"] = contents,
+                ["generationConfig"] = genConfig
             };
 
-            string effectiveSystem = BuildEffectiveSystemPrompt(settings);
+            string effectiveSystem = BuildEffectiveSystemPrompt(settings, isAudioTurn: isOmniAudio);
             if (!string.IsNullOrWhiteSpace(effectiveSystem))
             {
                 payload["systemInstruction"] = new
@@ -841,11 +1353,31 @@ public sealed class AiChatService : IAiChatService
             if (!resp.IsSuccessStatusCode)
             {
                 string errBody = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                if (isOmniAudio && (errBody.Contains("responseModalities", StringComparison.OrdinalIgnoreCase) ||
+                                    errBody.Contains("speechConfig", StringComparison.OrdinalIgnoreCase) ||
+                                    resp.StatusCode == System.Net.HttpStatusCode.BadRequest))
+                {
+                    isOmniAudio = false;
+                    continue;
+                }
+
                 EnsureSuccess(resp, errBody);
             }
 
             var textSb = new StringBuilder();
             var functionCalls = new List<(string Name, JsonElement Args)>();
+
+            Action<byte[], string> onAudioChunk = (chunk, fmt) =>
+            {
+                if (chunk.Length > 0)
+                {
+                    lock (audioAccumulator)
+                    {
+                        audioAccumulator.Write(chunk, 0, chunk.Length);
+                        resolvedAudioFormat = fmt;
+                    }
+                }
+            };
 
             if (streamThisRound)
             {
@@ -867,22 +1399,26 @@ public sealed class AiChatService : IAiChatService
                             continue;
                         }
 
-                        ProcessGeminiCandidateJson(data, textSb, functionCalls, onStreamDelta);
+                        ProcessGeminiCandidateJson(data, textSb, functionCalls, onStreamDelta, onAudioChunk);
                     }
                     else if (line.StartsWith('{'))
                     {
-                        ProcessGeminiCandidateJson(line, textSb, functionCalls, onStreamDelta);
+                        ProcessGeminiCandidateJson(line, textSb, functionCalls, onStreamDelta, onAudioChunk);
                     }
                 }
             }
             else
             {
                 string body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-                ProcessGeminiCandidateJson(body, textSb, functionCalls, onStreamDelta: null);
+                ProcessGeminiCandidateJson(body, textSb, functionCalls, onStreamDelta: null, onAudioChunk);
             }
 
             if (functionCalls.Count == 0 || toolHost is null || round == MaxToolRounds)
             {
+                if (audioAccumulator.Length > 0)
+                {
+                    toolHost?.OnAudioReceived?.Invoke(audioAccumulator.ToArray(), resolvedAudioFormat);
+                }
                 return textSb.ToString().Trim();
             }
 
@@ -922,7 +1458,8 @@ public sealed class AiChatService : IAiChatService
         string json,
         StringBuilder textSb,
         List<(string Name, JsonElement Args)> functionCalls,
-        Action<string>? onStreamDelta)
+        Action<string>? onStreamDelta,
+        Action<byte[], string>? onAudioChunk = null)
     {
         try
         {
@@ -951,6 +1488,23 @@ public sealed class AiChatService : IAiChatService
                     {
                         textSb.Append(chunk);
                         onStreamDelta?.Invoke(chunk);
+                    }
+                }
+                else if (part.TryGetProperty("inlineData", out var inlineData))
+                {
+                    if (inlineData.TryGetProperty("data", out var dataProp) && dataProp.ValueKind == JsonValueKind.String)
+                    {
+                        string b64 = dataProp.GetString() ?? string.Empty;
+                        string mime = inlineData.TryGetProperty("mimeType", out var m) ? m.GetString() ?? "audio/wav" : "audio/wav";
+                        if (!string.IsNullOrEmpty(b64))
+                        {
+                            try
+                            {
+                                byte[] chunk = Convert.FromBase64String(b64);
+                                onAudioChunk?.Invoke(chunk, mime);
+                            }
+                            catch { }
+                        }
                     }
                 }
                 else if (part.TryGetProperty("functionCall", out var fc))
@@ -1026,7 +1580,7 @@ public sealed class AiChatService : IAiChatService
                 ["stream"] = streamThisRound
             };
 
-            string effectiveSystem = BuildEffectiveSystemPrompt(settings);
+            string effectiveSystem = BuildEffectiveSystemPrompt(settings, isAudioTurn: false);
             if (!string.IsNullOrWhiteSpace(effectiveSystem))
             {
                 payload["system"] = effectiveSystem;
@@ -1231,8 +1785,19 @@ public sealed class AiChatService : IAiChatService
     }
 
     // ==================== TOOL DEFINITIONS & EXECUTION ====================
-    internal static string BuildEffectiveSystemPrompt(AiAssistantSettings settings, DateTime? customNow = null)
+    internal static string BuildEffectiveSystemPrompt(AiAssistantSettings settings, DateTime? customNow = null, bool isAudioTurn = false)
     {
+        if (isAudioTurn)
+        {
+            return "You are StudyMateAI Voice, an intelligent, natural conversational tutor. " +
+                   "You are conversing directly in real-time voice speech with the user. " +
+                   "CRITICAL VOICE RULES:\n" +
+                   "1. Answer conversationally, clearly, and concisely in natural spoken language.\n" +
+                   "2. NEVER use markdown symbols (*, **, #, `), markdown headings, bullet points, numbered lists, ASCII art, tables, code blocks, or ```cards blocks in your speech.\n" +
+                   "3. NEVER output <tool_call>, <function>, <parameter>, or technical tool tags in spoken speech.\n" +
+                   "4. Speak directly as if talking in person to a student.";
+        }
+
         var parts = new List<string>();
         DateTime now = customNow ?? DateTime.Now;
         TimeZoneInfo localTz = TimeZoneInfo.Local;
@@ -1258,13 +1823,19 @@ public sealed class AiChatService : IAiChatService
             $"   • For government schemes & policy: Press Information Bureau (PIB), Gazette of India, official ministry reports.\n" +
             $"3. STATISTICAL DISTINCTION — TOTAL VOLUME vs PER-CAPITA RATE:\n" +
             $"   • When explaining state comparisons (e.g. crime or incidents), ALWAYS explain the vital academic distinction between Total Incidents (where populous states like Uttar Pradesh with 240M people have high absolute counts) versus Crime Rate per 1 Lakh Population (where Union Territories or high-registration states like Delhi or Kerala lead due to near-100% online FIR/e-FIR systems, strict crime registration policies, and high literacy).\n\n" +
+            $"[CLEAN ACADEMIC TONE & EMOJI RESTRICTION (MANDATORY)]:\n" +
+            $"1. Keep your tone strictly clean, academic, professional, and clear. Do NOT clutter responses with decorative emojis.\n" +
+            $"2. STRICT RULE: DO NOT use emojis in headings, titles, section headers, or bullet prefixes (e.g. NEVER write '## 🕌 The Taj Mahal', '### 🏛️ Architecture', '### 📜 Context', '### 🎯 Notes', '### 🔍 Analysis', '### 💡 Conclusion'). Use clean standard Markdown headers (e.g. '## The Taj Mahal: Architecture and Context', '### Historical Context').\n" +
+            $"3. At most, use 0 to 1 minimal, subtle emoji in the entire response only if strictly necessary. Default to ZERO emojis.\n\n" +
             $"[INTERNET IMAGES & VISUAL REFERENCE INSTRUCTION (MANDATORY)]:\n" +
-            $"1. IF THE USER EXPLICITLY ASKS FOR AN IMAGE, PHOTO, PICTURE, OR DIAGRAM FROM THE INTERNET (e.g. 'show me an image/photo of...', 'picture dikhao', 'photo provide karo', 'image do', 'diagram ke sath batao', 'include photo/image'):\n" +
-            $"   • Use `web_search` to find authentic high-resolution educational, encyclopedic, or official image links (e.g. from Wikimedia Commons, Wikipedia, NASA, ISRO, NCBI, or official government portals).\n" +
-            $"   • Embed the authentic image into your response on its own line using standard Markdown image syntax: `![Descriptive Caption](https://example.com/image.jpg)`.\n" +
-            $"   • ONLY embed real, direct HTTPS image URLs (e.g. ending in `.jpg`, `.jpeg`, `.png`, `.webp`, `.svg`, or authentic media URLs from Wikimedia Commons/Wikipedia). NEVER invent or hallucinate fake broken image URLs.\n" +
-            $"   • Accompany the image with a brief clear caption explaining the visual concept.\n" +
-            $"   • If the user does NOT explicitly ask for an image, do NOT include random internet images; provide clear conceptual explanations and structured charts.\n\n" +
+            $"1. MANDATORY VISUAL IMAGE EMBEDDING ON EVERY TOPIC/CONCEPT:\n" +
+            $"   • For EVERY response explaining a monument, place, person, historical event, scientific concept, biology/anatomy, physics, chemistry, engineering, animal, geography, architecture, or academic topic, you MUST call the `search_images` tool to retrieve authentic visual references or diagrams.\n" +
+            $"   • From the returned results, pick the most relevant direct image URL and embed it directly into your response on its own line using standard Markdown:\n" +
+            $"     `![Descriptive Caption](direct_image_url)`\n" +
+            $"   • CRITICAL IMAGE SYNTAX RULE: ALWAYS include the leading exclamation mark '!' (e.g. `![Taj Mahal](url)`). DO NOT write `[Caption](url)` without '!', as omitting '!' renders as an unrendered text link instead of a picture!\n" +
+            $"   • Accompany the image with a concise, clear caption explaining the visual concept.\n" +
+            $"   • STRICT ANTI-HALLUCINATION RULE: ONLY embed real, authentic HTTPS image URLs returned by `search_images` or `web_search`. NEVER fabricate, guess, or invent fake image URLs (e.g. fake Wikimedia or image paths). Always execute `search_images` to obtain authentic working URLs.\n" +
+            $"   • Only skip calling `search_images` if the query is pure arithmetic (e.g. 'what is 2 + 2'), pure code syntax debugging with no visual aspect, or if the user explicitly requested text-only.\n\n" +
             $"[VISUAL CARDS & DATA CHARTS USAGE (MANDATORY)]:\n" +
             $"1. VISUAL CARDS GRID (`cards` block):\n" +
             $"   • Whenever summarizing points, categories, definitions, features, advantages/disadvantages, or comparing topics, ALWAYS use the `cards` block instead of plain bullet walls!\n" +
@@ -1281,7 +1852,29 @@ public sealed class AiChatService : IAiChatService
             $"   • Mathematical Function Curves (`function`):\n" +
             $"     ```chart\n" +
             $"     {{\"type\":\"function\",\"title\":\"Sine Wave\",\"expression\":\"sin(x)\",\"xMin\":-6.28,\"xMax\":6.28,\"yMin\":-1.5,\"yMax\":1.5}}\n" +
-            $"     ```");
+            $"     ```\n\n" +
+            $"[INTERACTIVE 3D MODELS (SKETCHFAB CDN) (MANDATORY)]:\n" +
+            $"1. MANDATORY 3D MODEL EMBEDDING ON BIOLOGICAL, PHYSICAL & STRUCTURAL CONCEPTS:\n" +
+            $"   • Whenever the user asks to see a 3D model, OR whenever explaining cells (plant cell, animal cell, neuron, bacteria), organs (heart, brain, eye, kidney, lungs, ear), human anatomy/skeleton, DNA/RNA double helix, solar system/planets, atoms/molecules, or mechanical engines:\n" +
+            $"   • You MUST call the `search_sketchfab_3d` tool with the concept name (e.g. `{{\"query\": \"animal cell\"}}`).\n" +
+            $"   • From the returned result, retrieve the direct embed URL and embed it directly into your response as an interactive 3D model on its own line using:\n" +
+            $"     ```sketchfab\n" +
+            $"     <embedUrl>\n" +
+            $"     ```\n" +
+            $"     OR markdown syntax:\n" +
+            $"     `![3D Model: Title](<embedUrl>)`\n" +
+            $"   • CRITICAL: NEVER invent, hallucinate, or guess a 3D model UID. Always use the verified embed URL provided by the tool to avoid Error 404.\n" +
+            $"   • StudyMateAI's rich UI engine embeds this live into the chat with real-time 360° interactive rotation, zoom, and inspection controls without downloading any heavy files.\n\n" +
+            $"[MERMAID DIAGRAMS & FLOWCHARTS (MANDATORY)]:\n" +
+            $"1. MANDATORY FLOWCHARTS & PATHWAY VISUALIZATION:\n" +
+            $"   • Whenever explaining multi-step processes, biological pathways (e.g. Photosynthesis, Cellular Respiration, Protein Synthesis, Nitrogen Cycle), workflows, algorithms, decision logic, or organizational hierarchies:\n" +
+            $"   • ALWAYS include a clean, syntax-valid Mermaid diagram using a fenced ```mermaid code block (`graph TD`, `flowchart LR`, or `sequenceDiagram`):\n" +
+            $"     ```mermaid\n" +
+            $"     graph TD\n" +
+            $"       A[Light Reaction in Thylakoid] -->|ATP & NADPH| B[Calvin Cycle in Stroma]\n" +
+            $"       B --> C[Glucose Synthesis]\n" +
+            $"     ```\n" +
+            $"   • StudyMateAI renders this automatically as a crisp, native visual flowchart diagram directly in the chat.");
 
         string personaPrompt = settings.PersonaPreset == AiPersonaPresetKind.Custom || !string.IsNullOrWhiteSpace(settings.SystemPrompt)
             ? settings.SystemPrompt.Trim()
@@ -1346,10 +1939,13 @@ public sealed class AiChatService : IAiChatService
     private static List<Dictionary<string, object>> BuildBaseChatMessages(
         AiAssistantSettings settings,
         IReadOnlyList<AiChatMessage> history,
-        string userPrompt)
+        string userPrompt,
+        byte[]? inputAudioBytes = null,
+        string inputAudioFormat = "wav")
     {
         var messages = new List<Dictionary<string, object>>();
-        string effectiveSystem = BuildEffectiveSystemPrompt(settings);
+        bool isAudioTurn = settings.TalkMode || inputAudioBytes is { Length: > 0 } || IsOmniAudioModel(settings.ModelName);
+        string effectiveSystem = BuildEffectiveSystemPrompt(settings, isAudioTurn: isAudioTurn);
         if (!string.IsNullOrWhiteSpace(effectiveSystem))
         {
             messages.Add(new Dictionary<string, object>
@@ -1359,12 +1955,83 @@ public sealed class AiChatService : IAiChatService
             });
         }
 
-        foreach (var (isUser, content) in NormalizeConversationTurns(history, userPrompt))
+        foreach (var msg in history.Where(m => !m.IsWelcome && !m.IsError))
+        {
+            if (msg.IsUser)
+            {
+                if (msg.HasUserAudio && msg.UserInputAudioBytes is { Length: > 0 })
+                {
+                    var userParts = new List<object>();
+                    if (!string.IsNullOrWhiteSpace(msg.Content) && !msg.Content.StartsWith("🎤 [Spoken", StringComparison.OrdinalIgnoreCase))
+                    {
+                        userParts.Add(new { type = "text", text = msg.Content });
+                    }
+                    userParts.Add(new
+                    {
+                        type = "input_audio",
+                        input_audio = new
+                        {
+                            data = Convert.ToBase64String(msg.UserInputAudioBytes),
+                            format = string.IsNullOrWhiteSpace(msg.UserInputAudioFormat) ? "wav" : msg.UserInputAudioFormat
+                        }
+                    });
+                    messages.Add(new Dictionary<string, object>
+                    {
+                        ["role"] = "user",
+                        ["content"] = userParts
+                    });
+                }
+                else
+                {
+                    messages.Add(new Dictionary<string, object>
+                    {
+                        ["role"] = "user",
+                        ["content"] = msg.Content
+                    });
+                }
+            }
+            else
+            {
+                string cleanContent = isAudioTurn ? SanitizeSpokenTranscript(msg.Content) : msg.Content;
+                if (!string.IsNullOrWhiteSpace(cleanContent))
+                {
+                    messages.Add(new Dictionary<string, object>
+                    {
+                        ["role"] = "assistant",
+                        ["content"] = cleanContent
+                    });
+                }
+            }
+        }
+
+        if (inputAudioBytes is { Length: > 0 })
+        {
+            var currentParts = new List<object>();
+            if (!string.IsNullOrWhiteSpace(userPrompt))
+            {
+                currentParts.Add(new { type = "text", text = userPrompt });
+            }
+            currentParts.Add(new
+            {
+                type = "input_audio",
+                input_audio = new
+                {
+                    data = Convert.ToBase64String(inputAudioBytes),
+                    format = string.IsNullOrWhiteSpace(inputAudioFormat) ? "wav" : inputAudioFormat
+                }
+            });
+            messages.Add(new Dictionary<string, object>
+            {
+                ["role"] = "user",
+                ["content"] = currentParts
+            });
+        }
+        else if (!string.IsNullOrWhiteSpace(userPrompt))
         {
             messages.Add(new Dictionary<string, object>
             {
-                ["role"] = isUser ? "user" : "assistant",
-                ["content"] = content
+                ["role"] = "user",
+                ["content"] = userPrompt
             });
         }
 
@@ -1659,6 +2326,72 @@ public sealed class AiChatService : IAiChatService
             });
         }
 
+        if (host.AllowFetchWebpage)
+        {
+            list.Add(new
+            {
+                type = "function",
+                function = new
+                {
+                    name = "fetch_webpage",
+                    description = "Fetches and extracts readable text, article body, or documentation from any webpage URL (including dynamic JavaScript-rendered pages).",
+                    parameters = new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            url = new { type = "string", description = "The full HTTP/HTTPS URL of the webpage to fetch." }
+                        },
+                        required = new[] { "url" }
+                    }
+                }
+            });
+        }
+
+        if (host.AllowSketchfab3D)
+        {
+            list.Add(new
+            {
+                type = "function",
+                function = new
+                {
+                    name = "search_sketchfab_3d",
+                    description = "Searches Sketchfab for interactive 3D models related to educational and scientific concepts (e.g. cell, heart, brain, DNA, solar system, atom, engine). Returns 3D model title, embed URL, and author. Embed the model in your response as: ```sketchfab\n<embedUrl>\n```",
+                    parameters = new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            query = new { type = "string", description = "Topic or concept to search a 3D model for (e.g. 'animal cell', 'human heart', 'brain', 'solar system', 'DNA')." }
+                        },
+                        required = new[] { "query" }
+                    }
+                }
+            });
+        }
+
+        if (host.AllowImageSearch)
+        {
+            list.Add(new
+            {
+                type = "function",
+                function = new
+                {
+                    name = "search_images",
+                    description = "Search Google Images and web for educational diagrams, scientific illustrations, photographs, and charts. Returns direct image URLs and titles. You MUST embed the best image into your response using standard Markdown image syntax: ![Caption](imageUrl).",
+                    parameters = new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            query = new { type = "string", description = "Specific visual search query (e.g. 'photosynthesis light reaction diagram', 'human heart chambers anatomy', 'water cycle diagram')." }
+                        },
+                        required = new[] { "query" }
+                    }
+                }
+            });
+        }
+
         return list;
     }
 
@@ -1748,6 +2481,65 @@ public sealed class AiChatService : IAiChatService
                 {
                     type = "OBJECT",
                     properties = new { query = new { type = "STRING", description = $"Web search query grounded in {DateTime.Now.Year}" } },
+                    required = new[] { "query" }
+                }
+            });
+        }
+
+        if (host.AllowFetchWebpage)
+        {
+            list.Add(new
+            {
+                type = "function",
+                function = new
+                {
+                    name = "fetch_webpage",
+                    description = "Fetches and extracts readable text, article body, or documentation from any webpage URL (including dynamic JavaScript-rendered pages).",
+                    parameters = new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            url = new { type = "string", description = "The full HTTP/HTTPS URL of the webpage to fetch." }
+                        },
+                        required = new[] { "url" }
+                    }
+                }
+            });
+        }
+
+        if (host.AllowSketchfab3D)
+        {
+            list.Add(new
+            {
+                type = "function",
+                function = new
+                {
+                    name = "search_sketchfab_3d",
+                    description = "Searches Sketchfab for interactive 3D models related to educational and scientific concepts (e.g. cell, heart, brain, DNA, solar system, atom, engine). Returns 3D model title, embed URL, and author. Embed the model in your response as: ```sketchfab\n<embedUrl>\n```",
+                    parameters = new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            query = new { type = "string", description = "Topic or concept to search a 3D model for (e.g. 'animal cell', 'human heart', 'brain', 'solar system', 'DNA')." }
+                        },
+                        required = new[] { "query" }
+                    }
+                }
+            });
+        }
+
+        if (host.AllowImageSearch)
+        {
+            list.Add(new
+            {
+                name = "search_images",
+                description = "Search Google Images and web for educational diagrams, scientific illustrations, and photos. Embed returned URLs using ![Caption](imageUrl).",
+                parameters = new
+                {
+                    type = "OBJECT",
+                    properties = new { query = new { type = "STRING", description = "Visual search query (e.g. 'photosynthesis diagram')" } },
                     required = new[] { "query" }
                 }
             });
@@ -1847,6 +2639,65 @@ public sealed class AiChatService : IAiChatService
             });
         }
 
+        if (host.AllowFetchWebpage)
+        {
+            list.Add(new
+            {
+                type = "function",
+                function = new
+                {
+                    name = "fetch_webpage",
+                    description = "Fetches and extracts readable text, article body, or documentation from any webpage URL (including dynamic JavaScript-rendered pages).",
+                    parameters = new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            url = new { type = "string", description = "The full HTTP/HTTPS URL of the webpage to fetch." }
+                        },
+                        required = new[] { "url" }
+                    }
+                }
+            });
+        }
+
+        if (host.AllowSketchfab3D)
+        {
+            list.Add(new
+            {
+                type = "function",
+                function = new
+                {
+                    name = "search_sketchfab_3d",
+                    description = "Searches Sketchfab for interactive 3D models related to educational and scientific concepts (e.g. cell, heart, brain, DNA, solar system, atom, engine). Returns 3D model title, embed URL, and author. Embed the model in your response as: ```sketchfab\n<embedUrl>\n```",
+                    parameters = new
+                    {
+                        type = "object",
+                        properties = new
+                        {
+                            query = new { type = "string", description = "Topic or concept to search a 3D model for (e.g. 'animal cell', 'human heart', 'brain', 'solar system', 'DNA')." }
+                        },
+                        required = new[] { "query" }
+                    }
+                }
+            });
+        }
+
+        if (host.AllowImageSearch)
+        {
+            list.Add(new
+            {
+                name = "search_images",
+                description = "Search Google Images and web for educational diagrams, photos, and visual figures. Embed returned URLs using ![Caption](imageUrl).",
+                input_schema = new
+                {
+                    type = "object",
+                    properties = new { query = new { type = "string", description = "Visual search query (e.g. 'photosynthesis diagram')" } },
+                    required = new[] { "query" }
+                }
+            });
+        }
+
         return list;
     }
 
@@ -1918,6 +2769,41 @@ public sealed class AiChatService : IAiChatService
                 if (sources.Count > 0)
                 {
                     host.OnWebSourcesCollected?.Invoke(sources);
+                }
+
+                return resultText;
+            }
+
+            case "fetch_webpage" or "fetch_url" or "read_webpage" when host.AllowFetchWebpage && host.ExecuteFetchWebpageAsync is not null:
+            {
+                string url = GetStringArg(args, "url");
+                host.OnToolStatus?.Invoke($"Fetching webpage content from {url}...");
+                host.OnToolUsageRecorded?.Invoke(false, true, false);
+                return await host.ExecuteFetchWebpageAsync(url, ct);
+            }
+
+            case "search_sketchfab_3d" or "sketchfab_3d" or "search_3d_model" when host.AllowSketchfab3D && host.ExecuteSketchfab3DSearchAsync is not null:
+            {
+                string q = GetStringArg(args, "query");
+                host.OnToolStatus?.Invoke($"Searching Sketchfab 3D models for \"{q}\"...");
+                host.OnToolUsageRecorded?.Invoke(false, true, false);
+                var (resultText, model) = await host.ExecuteSketchfab3DSearchAsync(q, ct);
+                if (model is not null)
+                {
+                    host.On3DModelCollected?.Invoke(model);
+                }
+                return resultText;
+            }
+
+            case "search_images" or "image_search" or "google_image_search" when host.AllowImageSearch && host.ExecuteImageSearchAsync is not null:
+            {
+                string q = GetStringArg(args, "query");
+                host.OnToolStatus?.Invoke($"Searching images for \"{q}\"...");
+                var (resultText, images) = await host.ExecuteImageSearchAsync(q, ct);
+                host.OnToolUsageRecorded?.Invoke(false, true, false);
+                if (images.Count > 0)
+                {
+                    host.OnImagesCollected?.Invoke(images);
                 }
 
                 return resultText;
@@ -2038,7 +2924,14 @@ public sealed class AiChatService : IAiChatService
             : baseUrl.Trim();
         raw = raw.TrimEnd('/');
 
-        if (provider == AiProviderKind.OllamaLocal)
+        if (provider == AiProviderKind.LiquidAi)
+        {
+            if (raw.Equals("https://api.liquid.ai", StringComparison.OrdinalIgnoreCase))
+            {
+                raw = "https://api.liquid.ai/openai/v1";
+            }
+        }
+        else if (provider == AiProviderKind.OllamaLocal)
         {
             if (raw.EndsWith("/v1", StringComparison.OrdinalIgnoreCase) ||
                 raw.EndsWith("/api", StringComparison.OrdinalIgnoreCase))

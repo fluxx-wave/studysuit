@@ -59,6 +59,11 @@ public sealed class SmoothScrollController : IDisposable
             _targetVertical = _scrollViewer.VerticalOffset;
             _targetHorizontal = _scrollViewer.HorizontalOffset;
         }
+        else if (e.ExtentHeightChange != 0 && Math.Abs(_scrollViewer.VerticalOffset - _scrollViewer.ScrollableHeight) < 8)
+        {
+            // Content grew while pinned to the bottom: stay at new bottom
+            _targetVertical = _scrollViewer.ScrollableHeight;
+        }
     }
 
     public void HandleMouseWheel(MouseWheelEventArgs e, bool horizontal = false, double wheelMultiplier = 0.95)
@@ -85,8 +90,10 @@ public sealed class SmoothScrollController : IDisposable
                     _targetVertical = _scrollViewer.VerticalOffset;
                 }
 
+                double maxStepH = Math.Max(120.0, _scrollViewer.ViewportWidth * 0.7);
+                double stepH = Math.Clamp(e.Delta * wheelMultiplier, -maxStepH, maxStepH);
                 _targetHorizontal = Math.Clamp(
-                    _targetHorizontal - (e.Delta * wheelMultiplier),
+                    _targetHorizontal - stepH,
                     0.0,
                     scrollableW);
                 e.Handled = true;
@@ -110,8 +117,10 @@ public sealed class SmoothScrollController : IDisposable
                     _targetHorizontal = _scrollViewer.HorizontalOffset;
                 }
 
+                double maxStepV = Math.Max(120.0, _scrollViewer.ViewportHeight * 0.7);
+                double stepV = Math.Clamp(e.Delta * wheelMultiplier, -maxStepV, maxStepV);
                 _targetVertical = Math.Clamp(
-                    _targetVertical - (e.Delta * wheelMultiplier),
+                    _targetVertical - stepV,
                     0.0,
                     scrollableH);
                 e.Handled = true;
@@ -170,7 +179,8 @@ public sealed class SmoothScrollController : IDisposable
         double dt = Math.Clamp((nowMs - _lastTickMs) / 1000.0, 0.001, 0.05);
         _lastTickMs = nowMs;
 
-        double alpha = 1.0 - Math.Exp(-14.5 * dt);
+        // Apple-style fluid inertia easing (smooth, gentle deceleration curve)
+        double alpha = 1.0 - Math.Exp(-8.5 * dt);
 
         double maxV = Math.Max(0.0, _scrollViewer.ScrollableHeight);
         double maxH = Math.Max(0.0, _scrollViewer.ScrollableWidth);

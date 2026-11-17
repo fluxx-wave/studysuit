@@ -44,6 +44,9 @@ public sealed partial class NewsFeedViewModel : ObservableObject, IDisposable
     private bool _isReaderOpen;
 
     [ObservableProperty]
+    private bool _isWebMode = true;
+
+    [ObservableProperty]
     private bool _isLoadingArticleContent;
 
     public bool HasItems => FilteredItems.Count > 0;
@@ -81,6 +84,8 @@ public sealed partial class NewsFeedViewModel : ObservableObject, IDisposable
     public event Action<NewsFeedItem>? DiscussWithAiRequested;
     public event Action<NewsFeedItem, string>? DiscussCustomPromptRequested;
     public event Action? StopOtherSpeechRequested;
+    public event Action<string>? OpenArticleWebRequested;
+    public event Action? CloseReaderRequested;
 
     public NewsFeedViewModel(INewsFeedService? feedService = null, IVoiceReadoutService? voiceService = null)
     {
@@ -209,8 +214,14 @@ public sealed partial class NewsFeedViewModel : ObservableObject, IDisposable
 
         SelectedArticle = item;
         IsReaderOpen = true;
+        IsWebMode = true;
         OnPropertyChanged(nameof(ActiveArticleContent));
         OnPropertyChanged(nameof(IsActiveArticleSpeaking));
+
+        if (!string.IsNullOrWhiteSpace(item.Url))
+        {
+            OpenArticleWebRequested?.Invoke(item.Url);
+        }
 
         if (string.IsNullOrWhiteSpace(item.FullContent) && !string.IsNullOrWhiteSpace(item.Url))
         {
@@ -256,6 +267,7 @@ public sealed partial class NewsFeedViewModel : ObservableObject, IDisposable
         SelectedArticle = null;
         OnPropertyChanged(nameof(ActiveArticleContent));
         OnPropertyChanged(nameof(IsActiveArticleSpeaking));
+        CloseReaderRequested?.Invoke();
     }
 
     [RelayCommand]

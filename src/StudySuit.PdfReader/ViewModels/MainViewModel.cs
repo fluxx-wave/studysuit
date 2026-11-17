@@ -232,7 +232,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             aiSettingsService ?? new AiSettingsService(),
             AiChatService,
             webResearchService ?? new WebResearchService(),
-            _voiceReadoutService,
+            new WebpageFetchService(),
+            new Sketchfab3DService(),
             null,
             _llamaAutoSetupService);
         AiAssistant.GetActivePdfContextAsync = GetActivePdfContextForAiAsync;
@@ -243,13 +244,8 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
         NewsFeed = new NewsFeedViewModel(_newsFeedService, _voiceReadoutService)
         {
-            VoiceModeProvider = () => AiAssistant.SelectedVoiceMode,
+            VoiceModeProvider = () => AiAssistant.Settings.VoiceMode,
             VoiceSettingsProvider = () => (AiAssistant.Settings.VoiceSpeed, AiAssistant.Settings.VoicePitch, AiAssistant.Settings.VoiceModel)
-        };
-        AiAssistant.StopOtherSpeechRequested += () =>
-        {
-            StopPdfSpeech();
-            NewsFeed.StopArticleReadout();
         };
         NewsFeed.DiscussWithAiRequested += item =>
         {
@@ -1402,6 +1398,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(ShowNewsFeed));
         OnPropertyChanged(nameof(ShowNcertLibrary));
         OnPropertyChanged(nameof(ShowDocumentReader));
+        AiAssistant?.UpdatePdfContextStatus(ShowDocumentReader && SelectedTab is not null);
     }
 
     private static string FormatDurationFriendly(TimeSpan ts)

@@ -41,7 +41,7 @@ public interface ILlamaCppAutoSetupService : IDisposable
         IProgress<(string Phase, double Percent, string Detail)>? progress = null,
         CancellationToken ct = default);
     string? LastServerError { get; }
-    Task<bool> StartServerAsync(string modelFileName, int port = 8080, CancellationToken ct = default);
+    Task<bool> StartServerAsync(string modelFileName, int port = 9931, CancellationToken ct = default);
     void StopServer();
     bool IsServerRunning();
 }
@@ -92,7 +92,7 @@ public sealed partial class LlamaCppAutoSetupService : ILlamaCppAutoSetupService
         _http = httpClient ?? new HttpClient { Timeout = TimeSpan.FromHours(2) };
         if (!_http.DefaultRequestHeaders.Contains("User-Agent"))
         {
-            _http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 StudySuit/1.0");
+            _http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 StudyMateAI/1.0");
         }
         _rootDir = customRootDir ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -312,7 +312,7 @@ public sealed partial class LlamaCppAutoSetupService : ILlamaCppAutoSetupService
 
             // Write helper batch script for manual launching if needed
             string batPath = Path.Combine(_rootDir, "run-server.bat");
-            string batContent = "@echo off\r\ncd /d \"%~dp0\"\r\nbin\\llama-server.exe -m \"%~1\" --port 8080 --host 127.0.0.1 -c 2048\r\n";
+            string batContent = "@echo off\r\ncd /d \"%~dp0\"\r\nbin\\llama-server.exe -m \"%~1\" --port 9931 --host 127.0.0.1 -c 2048\r\n";
             await File.WriteAllTextAsync(batPath, batContent, ct).ConfigureAwait(false);
 
             string targetExe = Path.Combine(_binDir, "llama-server.exe");
@@ -394,7 +394,7 @@ public sealed partial class LlamaCppAutoSetupService : ILlamaCppAutoSetupService
         return targetFile;
     }
 
-    public async Task<bool> StartServerAsync(string modelFileName, int port = 8080, CancellationToken ct = default)
+    public async Task<bool> StartServerAsync(string modelFileName, int port = 9931, CancellationToken ct = default)
     {
         StopServer();
         LastServerError = null;

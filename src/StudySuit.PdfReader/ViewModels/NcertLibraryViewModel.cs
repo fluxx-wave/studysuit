@@ -174,7 +174,7 @@ public sealed partial class NcertLibraryViewModel : ObservableObject
                 }
             }
 
-            if (OnlyDownloaded && !b.IsDownloaded)
+            if (OnlyDownloaded && !b.IsDownloaded && b.Chapters.Count == 0)
             {
                 return false;
             }

@@ -13,15 +13,16 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
     private readonly IAiSettingsService _settingsService;
     private readonly IAiChatService _chatService;
     private readonly IWebResearchService _webResearchService;
-    private readonly IVoiceReadoutService _voiceReadoutService;
+    private readonly IWebpageFetchService _webpageFetchService;
+    private readonly ISketchfab3DService _sketchfab3DService;
     private readonly IAiChatHistoryService _chatHistoryService;
     private readonly ILlamaCppAutoSetupService? _llamaService;
     private readonly object _messagesLock = new();
     private readonly object _sessionsLock = new();
     private CancellationTokenSource? _activeRequestCts;
-    private CancellationTokenSource? _speechCts;
-    private AiChatMessage? _speakingMessage;
     private bool _isSyncingSettings;
+
+    public IWebResearchService WebResearchService => _webResearchService;
 
     public ObservableCollection<AiChatMessage> Messages { get; } = [];
     public bool HasMessages => Messages.Count > 0;
@@ -51,19 +52,22 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
     private bool _isBusy;
 
     [ObservableProperty]
-    private bool _usePdfContext = true;
+    private bool _usePdfContext = false;
 
     [ObservableProperty]
-    private bool _useWebResearch;
+    private bool _useWebResearch = true;
+
+    [ObservableProperty]
+    private bool _useSketchfab3D = true;
+
+    [ObservableProperty]
+    private bool _useDiagramsAndCharts = true;
 
     [ObservableProperty]
     private AiPersonaPresetKind _selectedPersonaPreset = AiPersonaPresetKind.General;
 
     [ObservableProperty]
     private AiAnswerLength _selectedAnswerLength = AiAnswerLength.Balanced;
-
-    [ObservableProperty]
-    private VoiceReadoutMode _selectedVoiceMode = VoiceReadoutMode.HindiDirect;
 
     [ObservableProperty]
     private string _statusText = "Ready";
@@ -78,20 +82,21 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
     public event Action<string>? InsertIntoNotesRequested;
     public event Action? OpenSettingsRequested;
     public event Action? MessageAdded;
-    public event Action? StopOtherSpeechRequested;
 
     public AiAssistantViewModel(
         IAiSettingsService settingsService,
         IAiChatService chatService,
         IWebResearchService webResearchService,
-        IVoiceReadoutService? voiceReadoutService = null,
+        IWebpageFetchService? webpageFetchService = null,
+        ISketchfab3DService? sketchfab3DService = null,
         IAiChatHistoryService? chatHistoryService = null,
         ILlamaCppAutoSetupService? llamaService = null)
     {
         _settingsService = settingsService;
         _chatService = chatService;
         _webResearchService = webResearchService;
-        _voiceReadoutService = voiceReadoutService ?? new VoiceReadoutService();
+        _webpageFetchService = webpageFetchService ?? new WebpageFetchService();
+        _sketchfab3DService = sketchfab3DService ?? new Sketchfab3DService();
         _chatHistoryService = chatHistoryService ?? new AiChatHistoryService();
         _llamaService = llamaService;
 
@@ -100,7 +105,9 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
         System.Windows.Data.BindingOperations.EnableCollectionSynchronization(FilteredSessions, _sessionsLock);
 
         _settings = _settingsService.Load();
-        _useWebResearch = _settings.UseInternetByDefault;
+        _useWebResearch = _settings.UseInternetByDefault && _settings.EnableWebSearch;
+        _useSketchfab3D = _settings.EnableSketchfab3D;
+        _useDiagramsAndCharts = _settings.EnableMermaidDiagrams;
         SyncPersonalisationFromSettings();
         CurrentSession = new AiChatSession { Title = "New Study Chat" };
         Messages.CollectionChanged += (_, _) =>
@@ -115,10 +122,28 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
     {
         Settings = updated.Clone();
         _settingsService.Save(Settings);
-        UseWebResearch = Settings.UseInternetByDefault;
+        UseWebResearch = Settings.UseInternetByDefault && Settings.EnableWebSearch;
+        UseSketchfab3D = Settings.EnableSketchfab3D;
+        UseDiagramsAndCharts = Settings.EnableMermaidDiagrams;
+        if (Settings.AutoReferenceOpenPdf && (HasOpenPdfProvider?.Invoke() == true))
+        {
+            UsePdfContext = true;
+        }
+        else if (!Settings.AutoReferenceOpenPdf)
+        {
+            UsePdfContext = false;
+        }
         SyncPersonalisationFromSettings();
         OnPropertyChanged(nameof(ActiveProviderLabel));
         StatusText = $"Configured: {ActiveProviderLabel}";
+    }
+
+    public void UpdatePdfContextStatus(bool isPdfViewed)
+    {
+        if (Settings.AutoReferenceOpenPdf)
+        {
+            UsePdfContext = isPdfViewed;
+        }
     }
 
     private void SyncPersonalisationFromSettings()
@@ -128,7 +153,6 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
         {
             SelectedPersonaPreset = Settings.PersonaPreset;
             SelectedAnswerLength = Settings.AnswerLength;
-            SelectedVoiceMode = Settings.VoiceMode;
         }
         finally
         {
@@ -152,7 +176,7 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
         _settingsService.Save(Settings);
         var preset = AiPersonalisationDefaults.GetPersonaPreset(value);
         var length = AiPersonalisationDefaults.GetLengthOption(SelectedAnswerLength);
-        StatusText = $"Preset: {preset.ShortLabel} • {length.DisplayName}";
+        StatusText = $"Persona: {preset.DisplayName} ({length.DisplayName})";
     }
 
     partial void OnSelectedAnswerLengthChanged(AiAnswerLength value)
@@ -164,437 +188,154 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
 
         Settings.AnswerLength = value;
         _settingsService.Save(Settings);
-        var preset = AiPersonalisationDefaults.GetPersonaPreset(SelectedPersonaPreset);
         var length = AiPersonalisationDefaults.GetLengthOption(value);
-        StatusText = $"Preset: {preset.ShortLabel} • {length.DisplayName}";
-    }
-
-    partial void OnSelectedVoiceModeChanged(VoiceReadoutMode value)
-    {
-        if (_isSyncingSettings)
-        {
-            return;
-        }
-
-        Settings.VoiceMode = value;
-        _settingsService.Save(Settings);
-        StatusText = $"Voice: {AiPersonalisationDefaults.GetVoiceOption(value).ShortLabel}";
-    }
-
-    partial void OnHistorySearchQueryChanged(string value)
-    {
-        ApplyHistoryFilter();
-    }
-
-    private void ApplyHistoryFilter()
-    {
-        FilteredSessions.Clear();
-        string query = HistorySearchQuery?.Trim() ?? string.Empty;
-        var matches = string.IsNullOrWhiteSpace(query)
-            ? AllSessions
-            : AllSessions.Where(s => s.Title.Contains(query, StringComparison.OrdinalIgnoreCase));
-
-        foreach (var s in matches)
-        {
-            FilteredSessions.Add(s);
-        }
-
-        OnPropertyChanged(nameof(HasNoHistorySessions));
-        OnPropertyChanged(nameof(HasHistorySessions));
-    }
-
-    public async Task LoadSessionsListAsync()
-    {
-        try
-        {
-            var sessions = await _chatHistoryService.LoadSessionsAsync().ConfigureAwait(false);
-            RunOnUi(() =>
-            {
-                AllSessions.Clear();
-                foreach (var s in sessions)
-                {
-                    AllSessions.Add(s);
-                }
-                ApplyHistoryFilter();
-            });
-        }
-        catch
-        {
-            // Ignore
-        }
-    }
-
-    [RelayCommand]
-    public async Task ToggleHistoryAsync()
-    {
-        IsHistoryOpen = !IsHistoryOpen;
-        if (IsHistoryOpen)
-        {
-            await LoadSessionsListAsync();
-        }
-    }
-
-    [RelayCommand]
-    public async Task NewChatAsync()
-    {
-        await SaveCurrentSessionToHistoryAsync().ConfigureAwait(false);
-        CurrentSession = new AiChatSession { Title = "New Study Chat" };
-        RunOnUi(() =>
-        {
-            Messages.Clear();
-            IsHistoryOpen = false;
-            StatusText = "New study chat started";
-            MessageAdded?.Invoke();
-        });
-    }
-
-    [RelayCommand]
-    public async Task SelectSessionAsync(AiChatSession? session)
-    {
-        if (session is null) return;
-        await SaveCurrentSessionToHistoryAsync().ConfigureAwait(false);
-
-        CurrentSession = session;
-        RunOnUi(() =>
-        {
-            Messages.Clear();
-            foreach (var m in session.Messages)
-            {
-                Messages.Add(m);
-            }
-
-            IsHistoryOpen = false;
-            StatusText = $"Loaded chat: {session.Title}";
-            MessageAdded?.Invoke();
-        });
-    }
-
-    [RelayCommand]
-    public async Task DeleteSessionAsync(AiChatSession? session)
-    {
-        if (session is null) return;
-        await _chatHistoryService.DeleteSessionAsync(session.Id).ConfigureAwait(false);
-        RunOnUi(() =>
-        {
-            AllSessions.Remove(session);
-            FilteredSessions.Remove(session);
-            OnPropertyChanged(nameof(HasNoHistorySessions));
-            OnPropertyChanged(nameof(HasHistorySessions));
-        });
-
-        if (CurrentSession?.Id == session.Id)
-        {
-            await NewChatAsync();
-        }
-    }
-
-    [RelayCommand]
-    public async Task ClearAllHistoryAsync()
-    {
-        await _chatHistoryService.ClearAllSessionsAsync().ConfigureAwait(false);
-        RunOnUi(() =>
-        {
-            AllSessions.Clear();
-            FilteredSessions.Clear();
-            OnPropertyChanged(nameof(HasNoHistorySessions));
-            OnPropertyChanged(nameof(HasHistorySessions));
-        });
-        await NewChatAsync();
-    }
-
-    private async Task SaveCurrentSessionToHistoryAsync()
-    {
-        try
-        {
-            if (CurrentSession is null)
-            {
-                CurrentSession = new AiChatSession { Title = "New Study Chat" };
-            }
-
-            var nonWelcome = Messages.Where(m => !m.IsWelcome && !m.IsError).ToList();
-            if (nonWelcome.Count == 0) return;
-
-            if (CurrentSession.Title == "New Study Chat" || string.IsNullOrWhiteSpace(CurrentSession.Title))
-            {
-                var firstUser = nonWelcome.FirstOrDefault(m => m.IsUser);
-                if (firstUser is not null && !string.IsNullOrWhiteSpace(firstUser.Content))
-                {
-                    string content = firstUser.Content.Trim();
-                    if (content.StartsWith("[Circled", StringComparison.OrdinalIgnoreCase))
-                    {
-                        int qStart = content.IndexOf('\"');
-                        int qEnd = qStart >= 0 ? content.IndexOf('\"', qStart + 1) : -1;
-                        if (qStart >= 0 && qEnd > qStart)
-                        {
-                            string snippet = content.Substring(qStart + 1, qEnd - qStart - 1).Trim();
-                            snippet = snippet.Replace('\r', ' ').Replace('\n', ' ');
-                            CurrentSession.Title = $"🔍 {(snippet.Length > 36 ? snippet[..33] + "…" : snippet)}";
-                        }
-                        else
-                        {
-                            CurrentSession.Title = "🔍 Circled Search";
-                        }
-                    }
-                    else
-                    {
-                        string clean = content.Replace('\r', ' ').Replace('\n', ' ');
-                        CurrentSession.Title = clean.Length > 48 ? $"{clean[..45]}…" : clean;
-                    }
-                }
-            }
-
-            CurrentSession.Messages.Clear();
-            foreach (var m in Messages)
-            {
-                CurrentSession.Messages.Add(m);
-            }
-            CurrentSession.MessageCount = nonWelcome.Count;
-            CurrentSession.LastUpdatedAtUtc = DateTime.UtcNow;
-
-            await _chatHistoryService.SaveSessionAsync(CurrentSession).ConfigureAwait(false);
-
-            RunOnUi(() =>
-            {
-                var existing = AllSessions.FirstOrDefault(s => s.Id == CurrentSession.Id);
-                if (existing is null)
-                {
-                    AllSessions.Insert(0, CurrentSession);
-                }
-                else
-                {
-                    existing.Title = CurrentSession.Title;
-                    existing.LastUpdatedAtUtc = CurrentSession.LastUpdatedAtUtc;
-                    existing.MessageCount = CurrentSession.MessageCount;
-                }
-                ApplyHistoryFilter();
-            });
-        }
-        catch
-        {
-            // Safeguard against I/O interruption
-        }
-    }
-
-    [RelayCommand]
-    public async Task ToggleSpeakMessageAsync(AiChatMessage? message)
-    {
-        if (message is null || string.IsNullOrWhiteSpace(message.Content))
-        {
-            return;
-        }
-
-        if (message.IsSpeaking)
-        {
-            StopSpeaking();
-            StatusText = "Voice readout stopped";
-            return;
-        }
-
-        StopOtherSpeechRequested?.Invoke();
-        StopSpeaking();
-        _speakingMessage = message;
-        message.IsSpeaking = true;
-        _speechCts = new CancellationTokenSource();
-        var ct = _speechCts.Token;
-
-        var voiceOption = AiPersonalisationDefaults.GetVoiceOption(SelectedVoiceMode);
-        StatusText = $"Reading aloud ({voiceOption.ShortLabel})...";
-
-        try
-        {
-            await _voiceReadoutService.SpeakAsync(
-                message.Content,
-                SelectedVoiceMode,
-                Settings.VoiceSpeed,
-                Settings.VoicePitch,
-                Settings.VoiceModel,
-                ct);
-            if (!ct.IsCancellationRequested)
-            {
-                StatusText = "Ready";
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            StatusText = "Voice readout stopped";
-        }
-        catch (Exception ex)
-        {
-            StatusText = $"Voice error: {ex.Message}";
-        }
-        finally
-        {
-            if (ReferenceEquals(_speakingMessage, message))
-            {
-                _speakingMessage = null;
-            }
-
-            message.IsSpeaking = false;
-        }
-    }
-
-    [RelayCommand]
-    public void StopSpeaking()
-    {
-        try
-        {
-            _speechCts?.Cancel();
-            _speechCts?.Dispose();
-            _speechCts = null;
-        }
-        catch
-        {
-        }
-
-        _voiceReadoutService.Stop();
-        if (_speakingMessage is not null)
-        {
-            _speakingMessage.IsSpeaking = false;
-            _speakingMessage = null;
-        }
-
-        StatusText = "Voice readout stopped";
+        StatusText = $"Answer length: {length.DisplayName}";
     }
 
     [RelayCommand]
     public void OpenSettings() => OpenSettingsRequested?.Invoke();
 
-    public async Task StartCircleToSearchSessionAsync(string sessionTitle, string prompt)
+    public void StopSpeaking() { }
+    public VoiceReadoutMode SelectedVoiceMode => VoiceReadoutMode.English;
+
+    [RelayCommand]
+    public async Task SendMessageAsync() => await SendPromptAsync();
+
+    public async Task StartCircleToSearchSessionAsync(string sessionTitle, string fullPrompt)
     {
-        if (string.IsNullOrWhiteSpace(prompt) || IsBusy)
+        if (CurrentSession is not null)
         {
-            return;
+            CurrentSession.Title = sessionTitle;
         }
-
-        try
-        {
-            if (Messages.Any(m => !m.IsWelcome && !m.IsError))
-            {
-                await SaveCurrentSessionToHistoryAsync();
-            }
-
-            CurrentSession = new AiChatSession
-            {
-                Title = sessionTitle
-            };
-
-            RunOnUi(() =>
-            {
-                Messages.Clear();
-                StatusText = $"Circle to Search: {sessionTitle}";
-            });
-
-            await SendQuickPromptAsync(prompt);
-        }
-        catch (Exception ex)
-        {
-            RunOnUi(() => StatusText = $"Circle to Search: {ex.Message}");
-        }
+        await SendExternalPromptAsync(fullPrompt);
     }
 
     [RelayCommand]
-    public async Task SendQuickPromptAsync(string? prompt)
+    public async Task SendPromptAsync()
     {
+        string prompt = PromptText.Trim();
         if (string.IsNullOrWhiteSpace(prompt) || IsBusy)
-        {
-            return;
-        }
-
-        PromptText = prompt;
-        await SendMessageAsync();
-    }
-
-    [RelayCommand]
-    public async Task SendMessageAsync()
-    {
-        string question = PromptText?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(question) || IsBusy)
         {
             return;
         }
 
         PromptText = string.Empty;
+        await SendPromptCoreAsync(prompt);
+    }
+
+    [RelayCommand]
+    public async Task SendQuickPromptAsync(string prompt)
+    {
+        if (string.IsNullOrWhiteSpace(prompt) || IsBusy)
+        {
+            return;
+        }
+
+        await SendPromptCoreAsync(prompt.Trim());
+    }
+
+    public async Task SendExternalPromptAsync(string prompt)
+    {
+        if (string.IsNullOrWhiteSpace(prompt))
+        {
+            return;
+        }
+
+        await SendPromptCoreAsync(prompt.Trim());
+    }
+
+    public async Task SendExplainConceptPromptAsync(string concept)
+    {
+        if (string.IsNullOrWhiteSpace(concept)) return;
+        string prompt = $"Explain the concept '{concept}' thoroughly with intuitive examples, core formulas/principles, and real-world applications.";
+        await SendPromptCoreAsync(prompt);
+    }
+
+    public async Task SendQuizPromptAsync(string topic)
+    {
+        if (string.IsNullOrWhiteSpace(topic)) return;
+        string prompt = $"Generate 3 conceptual practice questions with detailed solutions about '{topic}'.";
+        await SendPromptCoreAsync(prompt);
+    }
+
+    public async Task SendNewsArticleDiscussionAsync(NewsFeedItem article)
+    {
+        if (article is null) return;
+        string prompt = $"Analyze this current affairs news story:\n\n**Headline:** {article.Title}\n**Source:** {article.Source}\n**Summary:** {article.Summary}\n\nProvide key background context, relevance to competitive exams/general knowledge, and critical takeaways.";
+        await SendPromptCoreAsync(prompt);
+    }
+
+    public async Task SendAnnotationDiscussionAsync(string annotationText, string noteText)
+    {
+        string prompt = string.IsNullOrWhiteSpace(noteText)
+            ? $"I highlighted this passage in the document:\n\"{annotationText}\"\n\nPlease analyze, clarify the concepts, and explain why it is significant."
+            : $"Regarding this passage:\n\"{annotationText}\"\n\nMy note was: \"{noteText}\"\n\nPlease answer my question or expand on this thought.";
+        await SendPromptCoreAsync(prompt);
+    }
+
+    public async Task SendFormulaEvaluationPromptAsync(string formula, double? evaluationResult)
+    {
+        string prompt = evaluationResult.HasValue
+            ? $"Explain the mathematical formula:\n`{formula}`\n\nComputed value: `{evaluationResult.Value:G6}`. Explain its derivation, meaning of variables, and practical usage."
+            : $"Explain the mathematical formula:\n`{formula}`\n\nExplain its derivation, units, variables, and how to apply it.";
+        await SendPromptCoreAsync(prompt);
+    }
+
+    private async Task SendPromptCoreAsync(string question)
+    {
+        IsBusy = true;
+        StatusText = "Thinking...";
         _activeRequestCts?.Cancel();
-        _activeRequestCts?.Dispose();
         _activeRequestCts = new CancellationTokenSource();
         var ct = _activeRequestCts.Token;
-
-        IsBusy = true;
-        bool casual = AiChatService.IsCasualMessage(question);
-        bool hasPdf = HasOpenPdfProvider?.Invoke() ?? (GetActivePdfContextAsync is not null);
 
         var userMessage = new AiChatMessage
         {
             Role = "user",
-            Content = question
+            Content = question,
+            TimestampUtc = DateTime.UtcNow
         };
-
-        var historySnapshot = Messages.ToList();
         Messages.Add(userMessage);
 
         var streamingMessage = new AiChatMessage
         {
             Role = "assistant",
-            Content = string.Empty
+            Content = "...",
+            IsStreaming = true,
+            TimestampUtc = DateTime.UtcNow
         };
         Messages.Add(streamingMessage);
         MessageAdded?.Invoke();
 
         try
         {
-            bool isLocal = Settings.Provider is AiProviderKind.OllamaLocal or AiProviderKind.LmStudioLocal or AiProviderKind.LlamaCppLocal;
-            if (isLocal && string.IsNullOrWhiteSpace(Settings.ModelName))
+            string? pdfContext = null;
+            if (UsePdfContext && GetActivePdfContextAsync is not null)
             {
-                streamingMessage.Content =
-                    "### 🤖 Local LLM Setup Required\n\n" +
-                    "To use local offline AI, please configure your local model name:\n\n" +
-                    "1. Click the **AI Settings (⚙️)** button at the top right of this chat.\n" +
-                    "2. Select your local provider (**Ollama**, **LM Studio**, or **llama.cpp**).\n" +
-                    "3. Click **Fetch Models** to auto-detect installed models, or enter your model name (e.g. `llama3.2`, `mistral`, `deepseek-r1:8b`).\n\n" +
-                    "> Ensure your local AI server (Ollama, LM Studio, or llama.cpp) is running on your machine.";
-                StatusText = "Local model not configured";
-                IsBusy = false;
-                MessageAdded?.Invoke();
-                return;
+                StatusText = "Reading open document context...";
+                pdfContext = await GetActivePdfContextAsync().ConfigureAwait(false);
+                streamingMessage.UsedPdfContext = !string.IsNullOrWhiteSpace(pdfContext);
             }
 
-            string? pdfContext = null;
-            if (!casual && UsePdfContext && GetActivePdfContextAsync is not null)
-            {
-                StatusText = "Reading active PDF context...";
-                pdfContext = await GetActivePdfContextAsync();
-                if (!string.IsNullOrWhiteSpace(pdfContext))
-                {
-                    streamingMessage.UsedPdfContext = true;
-                }
-            }
+            var historySnapshot = Messages
+                .Where(m => m != streamingMessage && !m.IsWelcome && !m.IsError)
+                .ToList();
 
             var collectedSources = new List<WebSourceReference>();
-            object sourcesLock = new();
+            var sourcesLock = new object();
+
             var toolHost = new AiToolHost
             {
-                HasOpenPdf = !casual && UsePdfContext && hasPdf,
-                AllowWebSearch = !casual && UseWebResearch,
-                AllowTemporalTools = !casual,
-                ExecutePdfSearchAsync = SearchPdfToolAsync,
-                ExecuteReadPdfPageAsync = ReadPdfPageToolAsync,
-                ExecuteGetCurrentTimeAsync = (tz, token) => Task.FromResult(AiChatService.FormatCurrentTimeResponse(tzOrFormat: tz)),
-                ExecuteGetTodayOverviewAsync = token => Task.FromResult(AiChatService.FormatTodayOverviewResponse()),
-                ExecuteGetCalendarInfoAsync = (target, offset, month, year, token) => Task.FromResult(AiChatService.FormatCalendarInfoResponse(target, offset, month, year)),
+                AllowWebSearch = Settings.EnableWebSearch && UseWebResearch,
+                AllowFetchWebpage = Settings.EnableFetchWebpage,
+                AllowSketchfab3D = Settings.EnableSketchfab3D && UseSketchfab3D,
+                AllowImageSearch = Settings.EnableImageSearch,
+                HasOpenPdf = HasOpenPdfProvider?.Invoke() == true,
+                AllowTemporalTools = true,
                 ExecuteWebSearchAsync = async (q, token) =>
                 {
-                    string effectiveQ = WebResearchService.SanitizeAndGroundTemporalQuery(q);
-                    if (!string.Equals(q, effectiveQ, StringComparison.OrdinalIgnoreCase))
-                    {
-                        RunOnUi(() => StatusText = $"Searching web for \"{effectiveQ}\" (grounded to {DateTime.Now.Year})...");
-                    }
-
-                    var found = await _webResearchService.SearchAsync(effectiveQ, Settings, token).ConfigureAwait(false);
-                    if (found.Count == 0)
-                    {
-                        return ("No web search results found.", found);
-                    }
-
+                    RunOnUi(() => StatusText = $"Searching web for \"{q}\"...");
+                    var found = await _webResearchService.SearchAsync(q, Settings, token).ConfigureAwait(false);
                     var sb = new StringBuilder();
                     foreach (var s in found)
                     {
@@ -604,9 +345,40 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
                             sb.AppendLine($"    {s.Snippet}");
                         }
                     }
-
                     return (sb.ToString(), found);
                 },
+                ExecuteFetchWebpageAsync = async (url, token) =>
+                {
+                    RunOnUi(() => StatusText = $"Fetching webpage {url}...");
+                    return await _webpageFetchService.FetchPageContentAsync(url, token).ConfigureAwait(false);
+                },
+                ExecuteSketchfab3DSearchAsync = async (q, token) =>
+                {
+                    RunOnUi(() => StatusText = $"Searching Sketchfab 3D for \"{q}\"...");
+                    return await _sketchfab3DService.SearchModelAsync(q, token).ConfigureAwait(false);
+                },
+                ExecuteImageSearchAsync = async (q, token) =>
+                {
+                    RunOnUi(() => StatusText = $"Searching images for \"{q}\"...");
+                    var foundImages = await _webResearchService.SearchImagesAsync(q, Settings, token).ConfigureAwait(false);
+                    if (foundImages.Count == 0)
+                    {
+                        return ($"No image search results found for \"{q}\".", foundImages);
+                    }
+
+                    var sb = new StringBuilder();
+                    sb.AppendLine($"Found {foundImages.Count} relevant image(s) for \"{q}\":\n");
+                    foreach (var img in foundImages)
+                    {
+                        sb.AppendLine($"[Image {img.Index}]: {img.Title}");
+                        sb.AppendLine($"    Direct Image URL: {img.ImageUrl}");
+                        sb.AppendLine($"    Embed in Markdown: ![{img.Title}]({img.ImageUrl})\n");
+                    }
+                    sb.AppendLine("[MANDATORY INSTRUCTION]: Select the best image(s) above and embed into your response using: `![Descriptive Caption](ImageURL)`.");
+                    return (sb.ToString(), foundImages);
+                },
+                ExecutePdfSearchAsync = SearchPdfToolAsync,
+                ExecuteReadPdfPageAsync = ReadPdfPageToolAsync,
                 OnToolStatus = status => RunOnUi(() => StatusText = status),
                 OnToolUsageRecorded = (usedPdf, usedWeb, usedTime) => RunOnUi(() =>
                 {
@@ -631,6 +403,17 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
                                     Snippet = src.Snippet
                                 });
                             }
+                        }
+                    }
+                }),
+                OnImagesCollected = images => RunOnUi(() =>
+                {
+                    foreach (var img in images)
+                    {
+                        if (!streamingMessage.Images.Any(i => string.Equals(i.ImageUrl, img.ImageUrl, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            streamingMessage.Images.Add(img);
+                            streamingMessage.UsedWebResearch = true;
                         }
                     }
                 })
@@ -667,11 +450,10 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
                             RunOnUi(() =>
                             {
                                 streamingMessage.Content = snapshotToPush;
-                                MessageAdded?.Invoke();
                             });
                         }
                     },
-                    ct),
+                    cancellationToken: ct),
                 ct);
 
             if (!string.IsNullOrWhiteSpace(finalReply))
@@ -682,6 +464,7 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
             {
                 streamingMessage.Content = "(No response text returned by model.)";
             }
+            streamingMessage.IsStreaming = false;
 
             MessageAdded?.Invoke();
             StatusText = streamingMessage.Sources.Count > 0
@@ -712,27 +495,33 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
                     $"**Details:** `{ex.Message}`\n\n" +
                     "**To start your local model:**\n" +
                     "- **Ollama:** In terminal, run `ollama run <model>` (e.g. `ollama run llama3.2`)\n" +
-                    "- **LM Studio:** Start the Local Server on port `1234`\n" +
-                    "- **llama.cpp:** Run `llama-server.exe -m <model.gguf> --port 8080`\n\n" +
-                    "> Click **AI Settings (⚙️)** above to change provider, endpoint, or switch to Cloud AI.";
+                    "- **LM Studio:** Start local server at port `1234`\n" +
+                    "- **llama.cpp:** Run `llama-server.exe` at port `8080`\n" +
+                    "- Or switch provider in ⚙️ Settings (top-right of AI panel).";
             }
             else
             {
-                errContent = $"Could not reach **{ActiveProviderLabel}**.\n\n`{ex.Message}`";
+                errContent =
+                    $"### ⚠️ AI Request Failed\n\n" +
+                    $"**Provider:** {Settings.Provider} • **Model:** `{Settings.ModelName}`\n\n" +
+                    $"**Error:** `{ex.Message}`\n\n" +
+                    "Check your internet connection, API Key in Settings ⚙️, or try another provider.";
             }
 
-            Messages.Add(new AiChatMessage
+            var errMsg = new AiChatMessage
             {
                 Role = "assistant",
                 Content = errContent,
-                IsError = true
-            });
+                IsError = true,
+                TimestampUtc = DateTime.UtcNow
+            };
+            Messages.Add(errMsg);
+            StatusText = "Error during request";
             MessageAdded?.Invoke();
-            StatusText = "Request failed";
-            await SaveCurrentSessionToHistoryAsync().ConfigureAwait(false);
         }
         finally
         {
+            streamingMessage.IsStreaming = false;
             IsBusy = false;
         }
     }
@@ -748,9 +537,9 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
     public async Task ClearChatAsync()
     {
         _activeRequestCts?.Cancel();
-        StopSpeaking();
         await SaveCurrentSessionToHistoryAsync().ConfigureAwait(false);
         CurrentSession = new AiChatSession { Title = "New Study Chat" };
+        Active3DViewPool.ClearAndDisposeAll();
         RunOnUi(() =>
         {
             Messages.Clear();
@@ -783,9 +572,179 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
         StatusText = "Inserted AI response into active note";
     }
 
-    private void AddWelcomeMessage()
+    [RelayCommand]
+    public void ToggleHistory()
     {
-        // Initial dummy welcome message removed per user instruction.
+        IsHistoryOpen = !IsHistoryOpen;
+        if (IsHistoryOpen)
+        {
+            _ = LoadSessionsListAsync();
+        }
+    }
+
+    [RelayCommand]
+    public void CloseHistory() => IsHistoryOpen = false;
+
+    [RelayCommand]
+    public async Task SelectSessionAsync(AiChatSession? session) => await LoadSessionAsync(session);
+
+    [RelayCommand]
+    public async Task LoadSessionAsync(AiChatSession? session)
+    {
+        if (session is null) return;
+        IsBusy = true;
+        StatusText = "Loading chat session...";
+        try
+        {
+            if (Messages.Count > 0 && CurrentSession is not null && CurrentSession.Id != session.Id)
+            {
+                await SaveCurrentSessionToHistoryAsync().ConfigureAwait(false);
+            }
+
+            var loaded = await _chatHistoryService.LoadSessionAsync(session.Id).ConfigureAwait(false);
+            var target = loaded ?? session;
+            if (target is not null)
+            {
+                Active3DViewPool.ClearAndDisposeAll();
+                RunOnUi(() =>
+                {
+                    CurrentSession = target;
+                    Messages.Clear();
+                    foreach (var m in target.Messages)
+                    {
+                        m.IsStreaming = false;
+                        Messages.Add(m);
+                    }
+                    IsHistoryOpen = false;
+                    StatusText = $"Loaded \"{target.Title}\" ({target.Messages.Count} messages)";
+                    MessageAdded?.Invoke();
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Failed to load session: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    public async Task DeleteSessionAsync(AiChatSession? session)
+    {
+        if (session is null) return;
+        try
+        {
+            await _chatHistoryService.DeleteSessionAsync(session.Id).ConfigureAwait(false);
+            RunOnUi(() =>
+            {
+                AllSessions.Remove(session);
+                FilteredSessions.Remove(session);
+                if (CurrentSession?.Id == session.Id)
+                {
+                    CurrentSession = new AiChatSession { Title = "New Study Chat" };
+                    Messages.Clear();
+                }
+                ApplyHistoryFilter();
+                StatusText = "Deleted session";
+            });
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Delete error: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    public async Task NewChatAsync()
+    {
+        await ClearChatAsync();
+        IsHistoryOpen = false;
+    }
+
+    private async Task LoadSessionsListAsync()
+    {
+        try
+        {
+            var list = await _chatHistoryService.LoadSessionsAsync().ConfigureAwait(false);
+            RunOnUi(() =>
+            {
+                AllSessions.Clear();
+                foreach (var s in list)
+                {
+                    AllSessions.Add(s);
+                }
+                ApplyHistoryFilter();
+            });
+        }
+        catch
+        {
+        }
+    }
+
+    partial void OnHistorySearchQueryChanged(string value) => ApplyHistoryFilter();
+
+    private void ApplyHistoryFilter()
+    {
+        string q = HistorySearchQuery?.Trim() ?? "";
+        var filtered = string.IsNullOrWhiteSpace(q)
+            ? AllSessions.ToList()
+            : AllSessions.Where(s => s.Title.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                                     s.PreviewText.Contains(q, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        FilteredSessions.Clear();
+        foreach (var s in filtered)
+        {
+            FilteredSessions.Add(s);
+        }
+        OnPropertyChanged(nameof(HasNoHistorySessions));
+        OnPropertyChanged(nameof(HasHistorySessions));
+    }
+
+    private async Task SaveCurrentSessionToHistoryAsync()
+    {
+        try
+        {
+            if (CurrentSession is null) return;
+            if (Messages.Count == 0) return;
+
+            if (CurrentSession.Title is "New Study Chat" or "New Chat" || string.IsNullOrWhiteSpace(CurrentSession.Title))
+            {
+                var firstUser = Messages.FirstOrDefault(m => m.IsUser && !string.IsNullOrWhiteSpace(m.Content));
+                if (firstUser is not null)
+                {
+                    string preview = firstUser.Content.Trim();
+                    if (preview.Length > 45) preview = preview[..45] + "...";
+                    CurrentSession.Title = preview;
+                }
+            }
+
+            CurrentSession.Messages.Clear();
+            foreach (var m in Messages)
+            {
+                CurrentSession.Messages.Add(m);
+            }
+            CurrentSession.MessageCount = Messages.Count(m => !m.IsWelcome && !m.IsError);
+            CurrentSession.LastUpdatedAtUtc = DateTime.UtcNow;
+
+            await _chatHistoryService.SaveSessionAsync(CurrentSession).ConfigureAwait(false);
+
+            RunOnUi(() =>
+            {
+                var existing = AllSessions.FirstOrDefault(s => s.Id == CurrentSession.Id);
+                if (existing is not null)
+                {
+                    AllSessions.Remove(existing);
+                }
+                AllSessions.Insert(0, CurrentSession);
+                ApplyHistoryFilter();
+            });
+        }
+        catch
+        {
+        }
     }
 
     private static void RunOnUi(Action action)
@@ -803,8 +762,6 @@ public sealed partial class AiAssistantViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
-        StopSpeaking();
-        _voiceReadoutService.Dispose();
         _activeRequestCts?.Cancel();
         _activeRequestCts?.Dispose();
     }

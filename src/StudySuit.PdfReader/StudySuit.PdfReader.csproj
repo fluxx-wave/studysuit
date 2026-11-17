@@ -9,7 +9,20 @@
     <AssemblyName>StudySuit.PdfReader</AssemblyName>
     <RootNamespace>StudySuit.PdfReader</RootNamespace>
     <Version>1.0.0</Version>
+    <ApplicationIcon>Assets\app_logo.ico</ApplicationIcon>
+    <Product>StudyMateAI</Product>
+    <Title>StudyMateAI</Title>
+    <Description>StudyMateAI - Intelligent AI Study Partner, PDF Reader &amp; Learning Platform</Description>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\app_logo.png" />
+    <Resource Include="Assets\app_logo.ico" />
+    <Resource Include="Assets\app_logo_full.png" />
+    <None Update="Assets\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 
   <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
@@ -20,8 +33,10 @@
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
+    <PackageReference Include="NAudio" Version="2.2.1" />
     <PackageReference Include="PDFtoImage" Version="5.4.0" />
     <PackageReference Include="PdfPig" Version="0.1.16" />
+    <PackageReference Include="System.Speech" Version="8.0.0" />
     <PackageReference Include="WPF-UI" Version="4.3.0" />
   </ItemGroup>
 

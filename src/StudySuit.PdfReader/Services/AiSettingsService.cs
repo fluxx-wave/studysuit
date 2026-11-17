@@ -77,6 +77,13 @@ public sealed class AiSettingsService : IAiSettingsService
             loaded.Temperature = Math.Clamp(loaded.Temperature, 0.0, 2.0);
             loaded.MaxTokens = Math.Clamp(loaded.MaxTokens, 64, 32768);
             loaded.MaxWebResults = Math.Clamp(loaded.MaxWebResults, 1, 10);
+
+            if (string.IsNullOrWhiteSpace(loaded.OmniVoice) ||
+                (loaded.Provider == AiProviderKind.LlamaCppLocal && string.Equals(loaded.OmniVoice, "alloy", StringComparison.OrdinalIgnoreCase)))
+            {
+                loaded.OmniVoice = "female";
+            }
+
             return loaded;
         }
         catch

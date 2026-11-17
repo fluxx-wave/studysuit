@@ -29,6 +29,13 @@ public sealed class MarkdownMessageView : RichTextBox
             typeof(MarkdownMessageView),
             new PropertyMetadata(true, OnContentPropertyChanged));
 
+    public static readonly DependencyProperty IsStreamingProperty =
+        DependencyProperty.Register(
+            nameof(IsStreaming),
+            typeof(bool),
+            typeof(MarkdownMessageView),
+            new PropertyMetadata(false, OnContentPropertyChanged));
+
     private readonly DispatcherTimer _renderThrottleTimer;
     private bool _pendingRender;
 
@@ -42,6 +49,12 @@ public sealed class MarkdownMessageView : RichTextBox
     {
         get => (bool)GetValue(IsDarkThemeProperty);
         set => SetValue(IsDarkThemeProperty, value);
+    }
+
+    public bool IsStreaming
+    {
+        get => (bool)GetValue(IsStreamingProperty);
+        set => SetValue(IsStreamingProperty, value);
     }
 
     public MarkdownMessageView()
@@ -71,6 +84,19 @@ public sealed class MarkdownMessageView : RichTextBox
         };
 
         PreviewMouseWheel += OnPreviewMouseWheel;
+        IsVisibleChanged += OnIsVisibleChanged;
+    }
+
+    private void OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (e.NewValue is true && !string.IsNullOrEmpty(MarkdownText))
+        {
+            if (MarkdownText.Contains("[3D Model:", StringComparison.OrdinalIgnoreCase) ||
+                MarkdownText.Contains("sketchfab.com", StringComparison.OrdinalIgnoreCase))
+            {
+                ScheduleRender();
+            }
+        }
     }
 
     private static void OnContentPropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
@@ -94,17 +120,30 @@ public sealed class MarkdownMessageView : RichTextBox
         }
     }
 
-    private void RebuildDocument()
+    public void RebuildDocument()
     {
         var doc = MarkdownFlowRenderer.RenderToFlowDocument(
             MarkdownText ?? string.Empty,
             IsDarkTheme,
-            OpenExternalLink);
+            OpenExternalLink,
+            IsStreaming);
         if (ActualWidth > 0)
         {
             doc.PageWidth = ActualWidth;
         }
         Document = doc;
+    }
+
+    protected override Size MeasureOverride(Size constraint)
+    {
+        if (!double.IsInfinity(constraint.Width) && constraint.Width > 0 && Document != null)
+        {
+            if (Math.Abs(Document.PageWidth - constraint.Width) > 1)
+            {
+                Document.PageWidth = constraint.Width;
+            }
+        }
+        return base.MeasureOverride(constraint);
     }
 
     protected override void OnRenderSizeChanged(SizeChangedInfo sizeInfo)

@@ -1951,7 +1951,7 @@ public sealed partial class DocumentTabViewModel : ObservableObject, IDisposable
         GoToPage(annotation.PageNumber);
     }
 
-    private void PushUndoSnapshot()
+    public void PushUndoSnapshot()
     {
         _undoStack.Push(CloneAnnotationList(Annotations));
         _redoStack.Clear();
@@ -1968,7 +1968,7 @@ public sealed partial class DocumentTabViewModel : ObservableObject, IDisposable
         CommitAnnotationChange(StatusMessage);
     }
 
-    private void CommitAnnotationChange(string status)
+    public void CommitAnnotationChange(string status)
     {
         StatusMessage = status;
         OnPropertyChanged(nameof(HasAnnotations));

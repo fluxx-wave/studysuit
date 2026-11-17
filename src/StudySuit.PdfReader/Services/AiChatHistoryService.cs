@@ -54,11 +54,31 @@ public sealed class AiChatHistoryService : IAiChatHistoryService
                 var session = JsonSerializer.Deserialize<AiChatSession>(json, JsonOptions);
                 if (session is not null && !string.IsNullOrWhiteSpace(session.Id))
                 {
-                    session.MessageCount = session.Messages.Count(m => !m.IsWelcome && !m.IsError);
-                    if (session.MessageCount > 0)
+                    bool hasUser = session.Messages.Any(m => m.IsUser && !m.IsWelcome && !string.IsNullOrWhiteSpace(m.Content));
+                    bool hasAssistant = session.Messages.Any(m => !m.IsUser && !m.IsError && !m.IsWelcome && !string.IsNullOrWhiteSpace(m.Content));
+
+                    // Filter out dummy or failed-only sessions that don't have a real two-way conversation
+                    if (!hasUser || !hasAssistant)
                     {
-                        list.Add(session);
+                        // Clean up dummy / failed session files so they never linger
+                        try
+                        {
+                            File.Delete(file);
+                        }
+                        catch
+                        {
+                            // File lock safeguard
+                        }
+                        continue;
                     }
+
+                    if (string.IsNullOrWhiteSpace(session.FirstSearchedTopic))
+                    {
+                        session.FirstSearchedTopic = AiChatSession.ExtractFirstSearchedTopic(session.Messages, session.Title);
+                    }
+
+                    session.MessageCount = session.Messages.Count(m => !m.IsWelcome && !m.IsError);
+                    list.Add(session);
                 }
             }
             catch
@@ -89,6 +109,10 @@ public sealed class AiChatHistoryService : IAiChatHistoryService
             var session = JsonSerializer.Deserialize<AiChatSession>(json, JsonOptions);
             if (session is not null)
             {
+                if (string.IsNullOrWhiteSpace(session.FirstSearchedTopic))
+                {
+                    session.FirstSearchedTopic = AiChatSession.ExtractFirstSearchedTopic(session.Messages, session.Title);
+                }
                 session.MessageCount = session.Messages.Count(m => !m.IsWelcome && !m.IsError);
             }
             return session;
@@ -104,6 +128,19 @@ public sealed class AiChatHistoryService : IAiChatHistoryService
         if (string.IsNullOrWhiteSpace(session.Id))
         {
             return;
+        }
+
+        bool hasUser = session.Messages.Any(m => m.IsUser && !m.IsWelcome && !string.IsNullOrWhiteSpace(m.Content));
+        bool hasAssistant = session.Messages.Any(m => !m.IsUser && !m.IsError && !m.IsWelcome && !string.IsNullOrWhiteSpace(m.Content));
+        if (!hasUser || !hasAssistant)
+        {
+            // Only persist real conversations that have both a user query and a valid assistant reply
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(session.FirstSearchedTopic))
+        {
+            session.FirstSearchedTopic = AiChatSession.ExtractFirstSearchedTopic(session.Messages, session.Title);
         }
 
         session.LastUpdatedAtUtc = DateTime.UtcNow;

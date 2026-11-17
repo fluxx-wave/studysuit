@@ -20,9 +20,25 @@ public sealed partial class NcertChapterItem : ObservableObject
     [ObservableProperty]
     private bool _isAvailable;
 
-    public string DisplayText => string.IsNullOrWhiteSpace(Title)
-        ? $"Chapter {ChapterNumber}"
-        : $"Ch {ChapterNumber}: {Title}";
+    public string DisplayText
+    {
+        get
+        {
+            if (FileName.Contains("ps", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Prelims & Table of Contents";
+            }
+
+            if (FileName.Contains("an", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Answers & Solutions";
+            }
+
+            return string.IsNullOrWhiteSpace(Title) || Title == $"Chapter {ChapterNumber}"
+                ? $"Chapter {ChapterNumber}"
+                : $"Ch {ChapterNumber}: {Title}";
+        }
+    }
 }
 
 public sealed partial class NcertBookItem : ObservableObject
@@ -38,6 +54,7 @@ public sealed partial class NcertBookItem : ObservableObject
     public string Description { get; init; } = string.Empty;
     public string BadgeColorHex { get; init; } = "#3B82F6";
     public string EstimatedSizeDisplay { get; init; } = "~45 MB";
+    public int TotalChapters { get; init; } = 1;
 
     [ObservableProperty]
     private bool _isDownloaded;
@@ -83,6 +100,8 @@ public sealed partial class NcertBookItem : ObservableObject
             }
         }
         OnPropertyChanged(nameof(HasMultipleChapters));
+        OnPropertyChanged(nameof(StatusBadgeText));
+        OnPropertyChanged(nameof(ActionButtonText));
     }
 
     public void ClearChapters()
@@ -92,15 +111,19 @@ public sealed partial class NcertBookItem : ObservableObject
             Chapters.Clear();
         }
         OnPropertyChanged(nameof(HasMultipleChapters));
+        OnPropertyChanged(nameof(StatusBadgeText));
+        OnPropertyChanged(nameof(ActionButtonText));
     }
 
-    public bool HasMultipleChapters => Chapters.Count > 1;
+    public bool HasMultipleChapters => Chapters.Count > 0;
 
     public string StatusBadgeText => IsDownloading
         ? $"Downloading ({DownloadProgressPercent:0}%)"
-        : (IsDownloaded ? "Downloaded • Ready" : "Official NCERT");
+        : (IsDownloaded ? "Downloaded • Ready" : (Chapters.Count > 0 ? $"{Chapters.Count}/{TotalChapters} Chs" : "Official NCERT"));
 
-    public string ActionButtonText => IsDownloaded ? "Open Book in Reader" : "Download Book";
+    public string ActionButtonText => IsDownloaded
+        ? "Open Book in Reader"
+        : (Chapters.Count > 0 ? "Download All Chapters" : "Download Book");
 
     partial void OnIsDownloadedChanged(bool value)
     {

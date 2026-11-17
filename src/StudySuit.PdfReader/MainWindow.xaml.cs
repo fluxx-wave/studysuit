@@ -34,6 +34,7 @@ public partial class MainWindow : FluentWindow
     private bool _isLoadingNoteDocument;
     private bool _isProgrammaticScroll;
     private bool _isUpdatingZoomSlider;
+    private bool _aiChatUserPinnedToBottom = true;
 
     // Interactive drawing / word-brush / selection state
     private Grid? _activeSurface;
@@ -66,15 +67,57 @@ public partial class MainWindow : FluentWindow
             SaveCurrentNoteDocument();
         };
 
+
         _viewModel.PromptForPasswordAsync = PromptForPasswordAsync;
         _viewModel.ShowMessageAction = ShowInfoMessage;
         _viewModel.ReminderTriggered += () => SystemSounds.Asterisk.Play();
         _viewModel.OpenAiSettingsRequested += OpenAiSettingsDialog;
+        _viewModel.PropertyChanged += (s, e) =>
+        {
+            if (e.PropertyName == nameof(MainViewModel.ShowAiSidebar) || e.PropertyName == nameof(MainViewModel.IsAiSidebarOpen))
+            {
+                UpdateAiSidebarColumnLayout(_viewModel.ShowAiSidebar);
+                if (!_viewModel.ShowAiSidebar || !_viewModel.IsAiSidebarOpen)
+                {
+                    Active3DViewPool.ClearAndDisposeAll();
+                    ClipWebViewsInAiChat();
+                }
+                else
+                {
+                    ReloadActive3DModels();
+                }
+            }
+        };
+        _viewModel.AiAssistant.PropertyChanged += (s, e) =>
+        {
+            if (e.PropertyName == nameof(AiAssistantViewModel.IsHistoryOpen))
+            {
+                ClipWebViewsInAiChat();
+            }
+        };
+        UpdateAiSidebarColumnLayout(_viewModel.ShowAiSidebar);
         _viewModel.AiAssistant.MessageAdded += () =>
         {
+            _aiChatUserPinnedToBottom = true;
+            _aiChatSmoothScroller?.SyncAndStop();
             Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, () => AiChatScrollViewer.ScrollToEnd());
         };
         _viewModel.AiAssistant.InsertIntoNotesRequested += AppendAiTextToActiveNote;
+        MarkdownFlowRenderer.FallbackImageResolver = async alt =>
+        {
+            if (string.IsNullOrWhiteSpace(alt)) return null;
+            try
+            {
+                string query = MarkdownFlowRenderer.ExtractSearchKeywords(alt);
+                if (string.IsNullOrWhiteSpace(query)) query = alt;
+                var results = await _viewModel.AiAssistant.WebResearchService.SearchImagesAsync(query, _viewModel.AiAssistant.Settings).ConfigureAwait(false);
+                return results.FirstOrDefault()?.ImageUrl;
+            }
+            catch
+            {
+                return null;
+            }
+        };
         _viewModel.FocusSearchInputAction = () =>
         {
             Dispatcher.BeginInvoke(() =>
@@ -97,6 +140,27 @@ public partial class MainWindow : FluentWindow
             }
         };
 
+        _viewModel.NewsFeed.OpenArticleWebRequested += (url) =>
+        {
+            Dispatcher.InvokeAsync(async () =>
+            {
+                await NavigateNewsWebViewAsync(url);
+            });
+        };
+
+        _viewModel.NewsFeed.CloseReaderRequested += () =>
+        {
+            Dispatcher.InvokeAsync(async () =>
+            {
+                await WebViewMemoryManager.ClearPageMemoryAsync(NewsArticleWebView);
+            });
+        };
+
+        MarkdownFlowRenderer.RequestFullScreen3D += (url, title) =>
+        {
+            Dispatcher.InvokeAsync(() => Open3DModelFullScreen(url, title));
+        };
+
         Loaded += MainWindow_Loaded;
         Closing += (_, _) =>
         {
@@ -104,6 +168,9 @@ public partial class MainWindow : FluentWindow
             _pdfSmoothScroller?.Dispose();
             _aiChatSmoothScroller?.Dispose();
             _feedSmoothScroller?.Dispose();
+            Active3DViewPool.ClearAndDisposeAll();
+            _ = WebViewMemoryManager.ClearPageMemoryAsync(NewsArticleWebView);
+            _ = WebViewMemoryManager.ClearPageMemoryAsync(Model3DFullScreenWebView);
         };
     }
 
@@ -203,6 +270,82 @@ public partial class MainWindow : FluentWindow
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
 
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")]
+    private static extern IntPtr CreateRectRgn(int nLeftRect, int nTopRect, int nRightRect, int nBottomRect);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern int SetWindowRgn(IntPtr hWnd, IntPtr hRgn, bool bRedraw);
+
+    private string? _currentFullScreen3DUrl;
+
+    private void Open3DModelFullScreen(string embedUrl, string title)
+    {
+        if (string.IsNullOrWhiteSpace(embedUrl) || Model3DFullScreenOverlay is null || Model3DFullScreenWebView is null)
+        {
+            return;
+        }
+
+        _currentFullScreen3DUrl = embedUrl;
+        Model3DFullScreenTitle.Text = string.IsNullOrWhiteSpace(title) ? "3D Interactive Model" : title;
+        Model3DFullScreenOverlay.Visibility = Visibility.Visible;
+        ClipWebViewsInAiChat();
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var env = await WebViewMemoryManager.GetSharedEnvironmentAsync().ConfigureAwait(false);
+                await Model3DFullScreenWebView.Dispatcher.InvokeAsync(async () =>
+                {
+                    await Model3DFullScreenWebView.EnsureCoreWebView2Async(env);
+                    if (Model3DFullScreenWebView.CoreWebView2 != null)
+                    {
+                        WebViewMemoryManager.ApplyLowMemoryTarget(Model3DFullScreenWebView.CoreWebView2);
+                        Model3DFullScreenWebView.CoreWebView2.Settings.IsStatusBarEnabled = false;
+                        Model3DFullScreenWebView.CoreWebView2.Navigate(embedUrl);
+                    }
+                    else
+                    {
+                        Model3DFullScreenWebView.Source = new Uri(embedUrl);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[3D FullScreen] Init error: {ex.Message}");
+                await Model3DFullScreenWebView.Dispatcher.InvokeAsync(() =>
+                {
+                    try { Model3DFullScreenWebView.Source = new Uri(embedUrl); } catch { }
+                });
+            }
+        });
+    }
+
+    private void Close3DModelFullScreen()
+    {
+        if (Model3DFullScreenOverlay is null) return;
+        Model3DFullScreenOverlay.Visibility = Visibility.Collapsed;
+        _ = WebViewMemoryManager.ClearPageMemoryAsync(Model3DFullScreenWebView);
+        ClipWebViewsInAiChat();
+    }
+
+    private void Model3DFullScreen_Close_Click(object sender, RoutedEventArgs e)
+    {
+        Close3DModelFullScreen();
+    }
+
+    private void Model3DFullScreen_OpenBrowser_Click(object sender, RoutedEventArgs e)
+    {
+        if (!string.IsNullOrWhiteSpace(_currentFullScreen3DUrl))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo(_currentFullScreen3DUrl) { UseShellExecute = true });
+            }
+            catch { }
+        }
+    }
+
     public void AnimateThemeTransition()
     {
         var fade = new DoubleAnimation(0.86, 1.0, TimeSpan.FromMilliseconds(210))
@@ -258,16 +401,119 @@ public partial class MainWindow : FluentWindow
 
     private void AiChatItemsControl_SizeChanged(object sender, SizeChangedEventArgs e)
     {
-        if (AiChatScrollViewer is null || e.HeightChanged == false)
+        if (AiChatScrollViewer is null)
         {
             return;
         }
 
-        // Keep the latest streamed response scrolled into view when the user is near the bottom
-        if (_viewModel.AiAssistant.IsBusy &&
-            AiChatScrollViewer.VerticalOffset >= Math.Max(0, AiChatScrollViewer.ScrollableHeight - 80))
+        // Keep the latest streamed response scrolled into view ONLY if the user hasn't scrolled up
+        if (_aiChatUserPinnedToBottom && _viewModel.AiAssistant.IsBusy)
         {
-            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, () => AiChatScrollViewer.ScrollToEnd());
+            _aiChatSmoothScroller?.SyncAndStop();
+            AiChatScrollViewer.ScrollToEnd();
+        }
+
+        ClipWebViewsInAiChat();
+    }
+
+    private void ClipWebViewsInAiChat()
+    {
+        if (AiChatScrollViewer is null) return;
+
+        bool isChatVisible = AiChatScrollViewer.IsVisible &&
+                             AiChatScrollViewer.ActualHeight > 0 &&
+                             (Model3DFullScreenOverlay is null || Model3DFullScreenOverlay.Visibility != Visibility.Visible) &&
+                             (_viewModel?.AiAssistant is null || !_viewModel.AiAssistant.IsHistoryOpen) &&
+                             (_viewModel is null || (_viewModel.ShowAiSidebar && _viewModel.IsAiSidebarOpen));
+        double svWidth = AiChatScrollViewer.ActualWidth;
+        double svHeight = AiChatScrollViewer.ActualHeight;
+
+        var activeViews = Active3DViewRegistry.GetActiveViews();
+        foreach (var (border, wv) in activeViews)
+        {
+            if (wv is null || border is null) continue;
+
+            if (!isChatVisible)
+            {
+                if (wv.Visibility != Visibility.Hidden)
+                {
+                    wv.Visibility = Visibility.Hidden;
+                }
+                continue;
+            }
+
+            try
+            {
+                if (!border.IsLoaded || !border.IsDescendantOf(AiChatScrollViewer))
+                {
+                    continue;
+                }
+
+                GeneralTransform transform = border.TransformToAncestor(AiChatScrollViewer);
+                Point topLeft = transform.Transform(new Point(0, 0));
+                double top = topLeft.Y;
+                double bottom = top + border.ActualHeight;
+                double left = topLeft.X;
+                double right = left + border.ActualWidth;
+
+                // If completely scrolled out of the AiChatScrollViewer viewport horizontally or vertically:
+                if (bottom <= 0 || top >= svHeight || right <= 0 || left >= svWidth)
+                {
+                    if (wv.Visibility != Visibility.Hidden)
+                    {
+                        wv.Visibility = Visibility.Hidden;
+                    }
+                }
+                else if (top < 0 || bottom > svHeight || left < 0 || right > svWidth)
+                {
+                    // Partially scrolled past the top, bottom, left, or right edges.
+                    // Clip the native Win32 window strictly to the scroll viewer's visible boundary:
+                    if (wv.Visibility != Visibility.Visible)
+                    {
+                        wv.Visibility = Visibility.Visible;
+                    }
+
+                    if (wv.Handle != IntPtr.Zero)
+                    {
+                        var dpi = VisualTreeHelper.GetDpi(border);
+                        double clipTop = Math.Max(0, -top);
+                        double clipBottom = Math.Min(border.ActualHeight, svHeight - top);
+                        double clipLeft = Math.Max(0, -left);
+                        double clipRight = Math.Min(border.ActualWidth, svWidth - left);
+
+                        int pxLeft = (int)Math.Round(clipLeft * dpi.DpiScaleX);
+                        int pxTop = (int)Math.Round(clipTop * dpi.DpiScaleY);
+                        int pxRight = (int)Math.Round(clipRight * dpi.DpiScaleX);
+                        int pxBottom = (int)Math.Round(clipBottom * dpi.DpiScaleY);
+
+                        if (pxBottom > pxTop && pxRight > pxLeft)
+                        {
+                            IntPtr rgn = CreateRectRgn(pxLeft, pxTop, pxRight, pxBottom);
+                            SetWindowRgn(wv.Handle, rgn, true);
+                        }
+                        else
+                        {
+                            wv.Visibility = Visibility.Hidden;
+                        }
+                    }
+                }
+                else
+                {
+                    // Fully visible inside viewport
+                    if (wv.Visibility != Visibility.Visible)
+                    {
+                        wv.Visibility = Visibility.Visible;
+                    }
+
+                    if (wv.Handle != IntPtr.Zero)
+                    {
+                        SetWindowRgn(wv.Handle, IntPtr.Zero, true);
+                    }
+                }
+            }
+            catch
+            {
+            }
         }
     }
 
@@ -285,6 +531,164 @@ public partial class MainWindow : FluentWindow
             catch
             {
             }
+        }
+    }
+
+    private void ToggleWebMode_Click(object sender, RoutedEventArgs e)
+    {
+        _viewModel.NewsFeed.IsWebMode = true;
+        if (_viewModel.NewsFeed.SelectedArticle != null && !string.IsNullOrWhiteSpace(_viewModel.NewsFeed.SelectedArticle.Url))
+        {
+            _ = NavigateNewsWebViewAsync(_viewModel.NewsFeed.SelectedArticle.Url);
+        }
+    }
+
+    private void ToggleReaderMode_Click(object sender, RoutedEventArgs e)
+    {
+        _viewModel.NewsFeed.IsWebMode = false;
+        _ = WebViewMemoryManager.ClearPageMemoryAsync(NewsArticleWebView);
+    }
+
+    private void NewsArticleWebView_Reload_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            NewsArticleWebView?.Reload();
+        }
+        catch { }
+    }
+
+    private bool _isNewsWebViewAdBlockerConfigured;
+
+    private static readonly string[] AdBlockDomains = new[]
+    {
+        "doubleclick.net",
+        "googlesyndication.com",
+        "googleadservices.com",
+        "adnxs.com",
+        "criteo.com",
+        "taboola.com",
+        "outbrain.com",
+        "amazon-adsystem.com",
+        "adroll.com",
+        "rubiconproject.com",
+        "pubmatic.com",
+        "scorecardresearch.com",
+        "quantserve.com",
+        "moatads.com",
+        "smartadserver.com",
+        "teads.tv",
+        "advertising.com",
+        "infolinks.com",
+        "mgid.com",
+        "revcontent.com",
+        "zergnet.com",
+        "adsystem",
+        "adservice",
+        "popads",
+        "adcolony"
+    };
+
+    private const string AdBlockCss = @"
+        div[id*='google_ads'],
+        ins.adsbygoogle,
+        [class*='ad-container'],
+        [class*='advertisement'],
+        [class*='sponsored'],
+        .taboola,
+        .outbrain,
+        .ad-banner,
+        [id*='taboola'],
+        [id*='outbrain'],
+        iframe[src*='ad'],
+        .cookie-banner,
+        [id*='cookie-consent'],
+        [class*='cookie-notice'],
+        .ad-slot,
+        .dfp-ad {
+            display: none !important;
+            visibility: hidden !important;
+            width: 0 !important;
+            height: 0 !important;
+            max-height: 0 !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+    ";
+
+    private async Task NavigateNewsWebViewAsync(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url) || NewsArticleWebView is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var env = await WebViewMemoryManager.GetSharedEnvironmentAsync().ConfigureAwait(true);
+            await NewsArticleWebView.EnsureCoreWebView2Async(env);
+            if (NewsArticleWebView.CoreWebView2 != null)
+            {
+                var core = NewsArticleWebView.CoreWebView2;
+                WebViewMemoryManager.ApplyLowMemoryTarget(core);
+
+                if (!_isNewsWebViewAdBlockerConfigured)
+                {
+                    _isNewsWebViewAdBlockerConfigured = true;
+                    core.Settings.IsStatusBarEnabled = false;
+
+                    // 1. Network-level ad-blocking (drop requests to ad networks instantly with 204 No Content)
+                    core.AddWebResourceRequestedFilter("*", Microsoft.Web.WebView2.Core.CoreWebView2WebResourceContext.All);
+                    core.WebResourceRequested += (s, args) =>
+                    {
+                        try
+                        {
+                            if (Uri.TryCreate(args.Request.Uri, UriKind.Absolute, out var reqUri))
+                            {
+                                string host = reqUri.Host.ToLowerInvariant();
+                                foreach (var domain in AdBlockDomains)
+                                {
+                                    if (host.Contains(domain, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        args.Response = core.Environment.CreateWebResourceResponse(null, 204, "No Content", "Content-Type: text/plain");
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
+                    };
+
+                    // 2. DOM-level CSS injection to hide leftover ad containers and cookie banners
+                    string script = $@"
+                        (function() {{
+                            function injectAdBlockCss() {{
+                                if (document.getElementById('studysuit-adblock-style')) return;
+                                const style = document.createElement('style');
+                                style.id = 'studysuit-adblock-style';
+                                style.textContent = `{AdBlockCss.Replace("`", "\\`")}`;
+                                (document.head || document.documentElement).appendChild(style);
+                            }}
+                            injectAdBlockCss();
+                            if (document.readyState === 'loading') {{
+                                document.addEventListener('DOMContentLoaded', injectAdBlockCss);
+                            }}
+                        }})();
+                    ";
+                    _ = core.AddScriptToExecuteOnDocumentCreatedAsync(script);
+                }
+
+                core.Navigate(url);
+            }
+            else
+            {
+                NewsArticleWebView.Source = new Uri(url);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[News WebView] Navigate error: {ex.Message}");
+            try { NewsArticleWebView.Source = new Uri(url); } catch { }
         }
     }
 
@@ -428,6 +832,11 @@ public partial class MainWindow : FluentWindow
         EnsurePageScrollViewer();
 
         _aiChatSmoothScroller = new SmoothScrollController(AiChatScrollViewer);
+        if (AiChatScrollViewer is not null)
+        {
+            AiChatScrollViewer.SizeChanged += (_, _) => ClipWebViewsInAiChat();
+            AiChatScrollViewer.IsVisibleChanged += (_, _) => ClipWebViewsInAiChat();
+        }
         if (NewsFeedScrollViewer is not null)
         {
             _feedSmoothScroller = new SmoothScrollController(NewsFeedScrollViewer);
@@ -644,7 +1053,8 @@ public partial class MainWindow : FluentWindow
 
         if (_viewModel.Notes.IsSketchEraser)
         {
-            NoteSketchCanvas.EditingMode = InkCanvasEditingMode.EraseByStroke;
+            NoteSketchCanvas.EditingMode = InkCanvasEditingMode.EraseByPoint;
+            NoteSketchCanvas.EraserShape = new System.Windows.Ink.EllipseStylusShape(18, 18);
             return;
         }
 
@@ -1017,17 +1427,42 @@ public partial class MainWindow : FluentWindow
         }
 
         bool horizontal = (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift;
-        _pdfSmoothScroller?.HandleMouseWheel(e, horizontal, wheelMultiplier: 0.95);
+        _pdfSmoothScroller?.HandleMouseWheel(e, horizontal, wheelMultiplier: 0.50);
     }
 
     private void AiChatScrollViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        _aiChatSmoothScroller?.HandleMouseWheel(e, horizontal: false, wheelMultiplier: 0.75);
+        if (e.Delta > 0)
+        {
+            // User scrolled UP: detach auto-scroll lock
+            _aiChatUserPinnedToBottom = false;
+        }
+        else if (e.Delta < 0)
+        {
+            // Scrolling down near bottom restores pin
+            if (AiChatScrollViewer.VerticalOffset >= Math.Max(0, AiChatScrollViewer.ScrollableHeight - 35))
+            {
+                _aiChatUserPinnedToBottom = true;
+            }
+        }
+
+        _aiChatSmoothScroller?.HandleMouseWheel(e, horizontal: false, wheelMultiplier: 0.45);
+    }
+
+    private void AiChatScrollViewer_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        if (AiChatScrollViewer is null) return;
+        if (AiChatScrollViewer.VerticalOffset >= Math.Max(0, AiChatScrollViewer.ScrollableHeight - 25))
+        {
+            _aiChatUserPinnedToBottom = true;
+        }
+
+        ClipWebViewsInAiChat();
     }
 
     private void NewsFeedScrollViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        _feedSmoothScroller?.HandleMouseWheel(e, horizontal: false, wheelMultiplier: 0.90);
+        _feedSmoothScroller?.HandleMouseWheel(e, horizontal: false, wheelMultiplier: 0.50);
     }
 
     private void ZoomSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -1269,6 +1704,13 @@ public partial class MainWindow : FluentWindow
 
     private async void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Escape && Model3DFullScreenOverlay?.Visibility == Visibility.Visible)
+        {
+            e.Handled = true;
+            Close3DModelFullScreen();
+            return;
+        }
+
         bool ctrl = (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control;
         bool inReader = _viewModel.ShowDocumentReader && _wiredTab is not null;
 
@@ -1385,6 +1827,117 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    private void Window_PreviewKeyUp(object sender, KeyEventArgs e)
+    {
+
+    }
+
+    private double _savedAiSidebarWidth = 420;
+
+    private void UpdateAiSidebarColumnLayout(bool isOpen)
+    {
+        if (AiSidebarColumn == null) return;
+
+        if (isOpen)
+        {
+            double targetWidth = _savedAiSidebarWidth >= 300 ? _savedAiSidebarWidth : 420;
+            AiSidebarColumn.MinWidth = 300;
+            AiSidebarColumn.MaxWidth = 850;
+            AiSidebarColumn.Width = new GridLength(targetWidth);
+            if (AiSidebarSplitter != null) AiSidebarSplitter.Visibility = Visibility.Visible;
+            if (AiSidebarBorder != null) AiSidebarBorder.Visibility = Visibility.Visible;
+
+            // Re-render and reload 3D models fresh into the active pool when AI chat is opened
+            ReloadActive3DModels();
+        }
+        else
+        {
+            if (AiSidebarColumn.ActualWidth >= 280)
+            {
+                _savedAiSidebarWidth = AiSidebarColumn.ActualWidth;
+            }
+            AiSidebarColumn.MinWidth = 0;
+            AiSidebarColumn.MaxWidth = 0;
+            AiSidebarColumn.Width = new GridLength(0);
+            if (AiSidebarSplitter != null) AiSidebarSplitter.Visibility = Visibility.Collapsed;
+            if (AiSidebarBorder != null) AiSidebarBorder.Visibility = Visibility.Collapsed;
+
+            // When AI chat is closed: immediately release all loaded 3D models and terminate Chromium processes
+            Active3DViewPool.ClearAndDisposeAll();
+        }
+    }
+
+    private void ReloadActive3DModels()
+    {
+        try
+        {
+            if (AiChatItemsControl == null) return;
+            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, () =>
+            {
+                var views = FindVisualChildren<MarkdownMessageView>(AiChatItemsControl);
+                foreach (var view in views)
+                {
+                    if (!string.IsNullOrEmpty(view.MarkdownText) &&
+                        (view.MarkdownText.Contains("[3D Model:", StringComparison.OrdinalIgnoreCase) ||
+                         view.MarkdownText.Contains("sketchfab.com", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        view.RebuildDocument();
+                    }
+                }
+            });
+        }
+        catch { }
+    }
+
+    private static IEnumerable<T> FindVisualChildren<T>(DependencyObject depObj) where T : DependencyObject
+    {
+        if (depObj == null) yield break;
+        for (int i = 0; i < VisualTreeHelper.GetChildrenCount(depObj); i++)
+        {
+            DependencyObject child = VisualTreeHelper.GetChild(depObj, i);
+            if (child is T t)
+            {
+                yield return t;
+            }
+            foreach (T childOfChild in FindVisualChildren<T>(child))
+            {
+                yield return childOfChild;
+            }
+        }
+    }
+
+    private static T? FindVisualAncestor<T>(DependencyObject? depObj) where T : DependencyObject
+    {
+        while (depObj != null)
+        {
+            if (depObj is T t) return t;
+            depObj = VisualTreeHelper.GetParent(depObj);
+        }
+        return null;
+    }
+
+    private async void HistorySessionBorder_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is DependencyObject dep &&
+            FindVisualAncestor<System.Windows.Controls.Primitives.ButtonBase>(dep) is { } btn &&
+            btn is not System.Windows.Controls.Button)
+        {
+            return;
+        }
+        if (sender is FrameworkElement fe && fe.DataContext is AiChatSession session)
+        {
+            await _viewModel.AiAssistant.LoadSessionAsync(session);
+        }
+    }
+
+    private async void HistorySessionCard_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.DataContext is AiChatSession session)
+        {
+            await _viewModel.AiAssistant.LoadSessionAsync(session);
+        }
+    }
+
     // MS Paint-Style Word Brush Painting & Annotation Engine
     private void PageSurface_MouseEnter(object sender, MouseEventArgs e)
     {
@@ -1396,16 +1949,23 @@ public partial class MainWindow : FluentWindow
 
     private void UpdateSurfaceAltCursor(Grid surface)
     {
-        if (_wiredTab is not null &&
-            _wiredTab.ActiveTool == AnnotationTool.Pan &&
-            (Keyboard.Modifiers & ModifierKeys.Alt) == ModifierKeys.Alt)
+        if (_wiredTab is not null)
         {
-            surface.Cursor = Cursors.IBeam;
+            if (_wiredTab.ActiveTool == AnnotationTool.Eraser)
+            {
+                surface.Cursor = Cursors.Cross;
+                return;
+            }
+
+            if (_wiredTab.ActiveTool == AnnotationTool.Pan &&
+                (Keyboard.Modifiers & ModifierKeys.Alt) == ModifierKeys.Alt)
+            {
+                surface.Cursor = Cursors.IBeam;
+                return;
+            }
         }
-        else
-        {
-            surface.ClearValue(CursorProperty);
-        }
+
+        surface.ClearValue(CursorProperty);
     }
 
     private void MainWindow_SizeChanged(object sender, SizeChangedEventArgs e)
@@ -1469,11 +2029,37 @@ public partial class MainWindow : FluentWindow
         if (!_isPointerDragging && sender is Grid hoverSurface)
         {
             UpdateSurfaceAltCursor(hoverSurface);
+            if (_wiredTab?.ActiveTool == AnnotationTool.Eraser)
+            {
+                Point pos = e.GetPosition(hoverSurface);
+                if (FindVisualChildByName<Ellipse>(hoverSurface, "PreviewEllipse") is { } eraserPreview)
+                {
+                    Canvas.SetLeft(eraserPreview, pos.X - 18);
+                    Canvas.SetTop(eraserPreview, pos.Y - 18);
+                    eraserPreview.Width = 36;
+                    eraserPreview.Height = 36;
+                    eraserPreview.Stroke = new SolidColorBrush(Color.FromArgb(0xEE, 0xEF, 0x44, 0x44));
+                    eraserPreview.Fill = new SolidColorBrush(Color.FromArgb(0x28, 0xEF, 0x44, 0x44));
+                    eraserPreview.StrokeThickness = 1.5;
+                    eraserPreview.Visibility = Visibility.Visible;
+                }
+            }
         }
 
         if (_isPointerDragging && _activeSurface is not null)
         {
             ContinuePointerInteraction(e.GetPosition(_activeSurface));
+        }
+    }
+
+    private void PageSurface_MouseLeave(object sender, MouseEventArgs e)
+    {
+        if (sender is Grid surface)
+        {
+            if (!_isPointerDragging && FindVisualChildByName<Ellipse>(surface, "PreviewEllipse") is { } eraserPreview)
+            {
+                eraserPreview.Visibility = Visibility.Collapsed;
+            }
         }
     }
 
@@ -1630,7 +2216,7 @@ public partial class MainWindow : FluentWindow
             ? AnnotationTool.SelectText
             : _wiredTab.ActiveTool;
 
-        if (tool is AnnotationTool.Pan or AnnotationTool.Eraser)
+        if (tool == AnnotationTool.Pan)
         {
             return false;
         }
@@ -1676,6 +2262,24 @@ public partial class MainWindow : FluentWindow
         _isPointerDragging = true;
         _inkCapturePoints.Clear();
         _paintedWordIndices.Clear();
+
+        if (tool == AnnotationTool.Eraser)
+        {
+            _wiredTab.PushUndoSnapshot();
+            EraseAnnotationsInSegment(surface, pageVm, pos, pos, radius: 18.0);
+            if (FindVisualChildByName<Ellipse>(surface, "PreviewEllipse") is { } eraserPreview)
+            {
+                Canvas.SetLeft(eraserPreview, pos.X - 18);
+                Canvas.SetTop(eraserPreview, pos.Y - 18);
+                eraserPreview.Width = 36;
+                eraserPreview.Height = 36;
+                eraserPreview.Stroke = new SolidColorBrush(Color.FromArgb(0xEE, 0xEF, 0x44, 0x44));
+                eraserPreview.Fill = new SolidColorBrush(Color.FromArgb(0x28, 0xEF, 0x44, 0x44));
+                eraserPreview.StrokeThickness = 1.5;
+                eraserPreview.Visibility = Visibility.Visible;
+            }
+            return true;
+        }
 
         var brush = CreateBrushFromHex(_wiredTab.SelectedColorHex);
         double zoomScale = _wiredTab.ZoomPercent / 100.0;
@@ -1796,6 +2400,19 @@ public partial class MainWindow : FluentWindow
 
         Point current = ClampToSurface(rawPos, _activeSurface);
         _latestDragPoint = current;
+
+        if (_activeDragTool == AnnotationTool.Eraser)
+        {
+            if (FindVisualChildByName<Ellipse>(_activeSurface, "PreviewEllipse") is { } eraserPreview)
+            {
+                Canvas.SetLeft(eraserPreview, current.X - 18);
+                Canvas.SetTop(eraserPreview, current.Y - 18);
+                eraserPreview.Visibility = Visibility.Visible;
+            }
+            EraseAnnotationsInSegment(_activeSurface, _activeSurfacePage, _lastBrushPoint, current, radius: 18.0);
+            _lastBrushPoint = current;
+            return;
+        }
 
         if (IsWordBrushTool(_activeDragTool))
         {
@@ -1927,6 +2544,13 @@ public partial class MainWindow : FluentWindow
         if (surfaceW <= 0 || surfaceH <= 0)
         {
             pageVm.ClearLiveWordSelection();
+            return;
+        }
+
+        if (tool == AnnotationTool.Eraser)
+        {
+            EraseAnnotationsInSegment(surface, pageVm, _lastBrushPoint, endPoint, radius: 18.0);
+            _wiredTab.CommitAnnotationChange("Erased annotations");
             return;
         }
 
@@ -2064,6 +2688,164 @@ public partial class MainWindow : FluentWindow
         else if (tool == AnnotationTool.Ellipse)
         {
             await _wiredTab.AddRegionAnnotationAsync(pageVm.PageNumber, normalized, AnnotationType.Ellipse);
+        }
+    }
+
+    private void EraseAnnotationsInSegment(Grid surface, PdfPageViewModel pageVm, Point p1, Point p2, double radius)
+    {
+        if (_wiredTab is null) return;
+        double surfaceW = surface.ActualWidth;
+        double surfaceH = surface.ActualHeight;
+        if (surfaceW <= 0 || surfaceH <= 0) return;
+
+        int pageNum = pageVm.PageNumber;
+        int rotation = _wiredTab.RotationDegrees;
+        var onPage = _wiredTab.Annotations.Where(a => a.PageNumber == pageNum).ToList();
+        if (onPage.Count == 0) return;
+
+        bool changed = false;
+
+        static double DistancePointToSegment(Point p, Point a, Point b)
+        {
+            double dx = b.X - a.X;
+            double dy = b.Y - a.Y;
+            double lenSq = dx * dx + dy * dy;
+            if (lenSq < 0.001)
+            {
+                return double.Hypot(p.X - a.X, p.Y - a.Y);
+            }
+            double t = Math.Clamp(((p.X - a.X) * dx + (p.Y - a.Y) * dy) / lenSq, 0.0, 1.0);
+            double projX = a.X + t * dx;
+            double projY = a.Y + t * dy;
+            return double.Hypot(p.X - projX, p.Y - projY);
+        }
+
+        static double DistanceRectToSegment(Rect rect, Point a, Point b)
+        {
+            if (rect.Contains(a) || rect.Contains(b)) return 0;
+            Point center = new(rect.X + rect.Width / 2, rect.Y + rect.Height / 2);
+            double dCenter = DistancePointToSegment(center, a, b);
+            double rectRadius = double.Hypot(rect.Width / 2, rect.Height / 2);
+            return Math.Max(0, dCenter - rectRadius);
+        }
+
+        foreach (var ann in onPage)
+        {
+            if (ann.Type is AnnotationType.Ink or AnnotationType.Brush or AnnotationType.Underline or AnnotationType.Strikethrough)
+            {
+                if (ann.Points.Count >= 2)
+                {
+                    var screenPts = ann.Points
+                        .Select(pt => pt.Rotate(rotation))
+                        .Select(pt => new Point(pt.X * surfaceW, pt.Y * surfaceH))
+                        .ToList();
+
+                    var remainingChains = new List<List<NormalizedPoint>>();
+                    var currentChain = new List<NormalizedPoint>();
+                    bool anyPointErased = false;
+
+                    for (int i = 0; i < ann.Points.Count; i++)
+                    {
+                        double dist = DistancePointToSegment(screenPts[i], p1, p2);
+                        if (dist > radius)
+                        {
+                            currentChain.Add(ann.Points[i]);
+                        }
+                        else
+                        {
+                            anyPointErased = true;
+                            if (currentChain.Count >= 2)
+                            {
+                                remainingChains.Add([.. currentChain]);
+                            }
+                            currentChain.Clear();
+                        }
+                    }
+
+                    if (currentChain.Count >= 2)
+                    {
+                        remainingChains.Add(currentChain);
+                    }
+
+                    if (anyPointErased)
+                    {
+                        changed = true;
+                        if (remainingChains.Count == 0)
+                        {
+                            _wiredTab.Annotations.Remove(ann);
+                        }
+                        else
+                        {
+                            ann.Points = remainingChains[0];
+                            for (int k = 1; k < remainingChains.Count; k++)
+                            {
+                                var clone = ann.Clone();
+                                clone.Points = remainingChains[k];
+                                _wiredTab.Annotations.Add(clone);
+                            }
+                        }
+                    }
+                }
+            }
+            else if (ann.Type is AnnotationType.Rectangle or AnnotationType.Ellipse or AnnotationType.Highlight)
+            {
+                bool hit = false;
+                foreach (var nr in ann.Rects)
+                {
+                    var r = nr.Rotate(rotation);
+                    var screenRect = new Rect(r.X * surfaceW, r.Y * surfaceH, Math.Max(4, r.Width * surfaceW), Math.Max(4, r.Height * surfaceH));
+                    if (DistanceRectToSegment(screenRect, p1, p2) <= radius)
+                    {
+                        hit = true;
+                        break;
+                    }
+                }
+
+                if (hit)
+                {
+                    _wiredTab.Annotations.Remove(ann);
+                    changed = true;
+                }
+            }
+            else if (ann.Type == AnnotationType.Arrow)
+            {
+                if (ann.Points.Count >= 2)
+                {
+                    var pA = ann.Points[0].Rotate(rotation);
+                    var pB = ann.Points[1].Rotate(rotation);
+                    Point sA = new(pA.X * surfaceW, pA.Y * surfaceH);
+                    Point sB = new(pB.X * surfaceW, pB.Y * surfaceH);
+                    double d1 = DistancePointToSegment(sA, p1, p2);
+                    double d2 = DistancePointToSegment(sB, p1, p2);
+                    Point sMid = new((sA.X + sB.X) / 2, (sA.Y + sB.Y) / 2);
+                    double dMid = DistancePointToSegment(sMid, p1, p2);
+                    if (d1 <= radius || d2 <= radius || dMid <= radius)
+                    {
+                        _wiredTab.Annotations.Remove(ann);
+                        changed = true;
+                    }
+                }
+            }
+            else if (ann.Type is AnnotationType.StickyNote or AnnotationType.TextBox)
+            {
+                var anchor = ann.Rects.Count > 0
+                    ? ann.Rects[0].Rotate(rotation)
+                    : ann.Points.Count > 0
+                        ? new NormalizedRect(ann.Points[0].Rotate(rotation).X, ann.Points[0].Rotate(rotation).Y, 0.05, 0.05)
+                        : new NormalizedRect(0.1, 0.1, 0.05, 0.05);
+
+                var screenRect = new Rect(anchor.X * surfaceW, anchor.Y * surfaceH, Math.Max(28, anchor.Width * surfaceW), Math.Max(28, anchor.Height * surfaceH));
+                if (DistanceRectToSegment(screenRect, p1, p2) <= radius)
+                {
+                    _wiredTab.Annotations.Remove(ann);
+                    changed = true;
+                }
+            }
+        }
+
+        if (changed)
+        {
+            pageVm.UpdateAnnotations(_wiredTab.Annotations.Where(a => a.PageNumber == pageNum), rotation, _wiredTab.ZoomPercent / 100.0);
         }
     }
 

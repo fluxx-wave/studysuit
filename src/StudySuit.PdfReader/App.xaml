@@ -23,6 +23,25 @@
             <conv:StringEqualMultiConverter x:Key="StringEqualMulti" />
             <conv:PinIconConverter x:Key="PinIcon" />
 
+            <!-- Apple Typography: SF Pro Display / SF Pro Text with modern clean fallbacks -->
+            <FontFamily x:Key="AppleSystemFontFamily">SF Pro Display, SF Pro Text, SF Pro, -apple-system, BlinkMacSystemFont, Segoe UI Variable Text, Segoe UI, Helvetica Neue, Arial, sans-serif</FontFamily>
+
+            <Style TargetType="{x:Type Window}">
+                <Setter Property="FontFamily" Value="{StaticResource AppleSystemFontFamily}" />
+                <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+                <Setter Property="TextOptions.TextRenderingMode" Value="ClearType" />
+            </Style>
+
+            <Style TargetType="{x:Type TextBlock}">
+                <Setter Property="FontFamily" Value="{StaticResource AppleSystemFontFamily}" />
+                <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+                <Setter Property="TextOptions.TextRenderingMode" Value="ClearType" />
+            </Style>
+
+            <Style TargetType="{x:Type Control}">
+                <Setter Property="FontFamily" Value="{StaticResource AppleSystemFontFamily}" />
+            </Style>
+
             <!-- Global Touch Screen Scrolling Support for All Controls -->
             <Style TargetType="{x:Type ScrollViewer}" BasedOn="{StaticResource {x:Type ScrollViewer}}">
                 <Setter Property="PanningMode" Value="Both" />

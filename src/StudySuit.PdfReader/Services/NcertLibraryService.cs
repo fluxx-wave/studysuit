@@ -55,7 +55,6 @@ public sealed class NcertLibraryService : INcertLibraryService
 
     public IReadOnlyList<NcertBookItem> GetAllBooks()
     {
-        // Return a fresh list
         var list = new List<NcertBookItem>();
         foreach (var b in NcertLibraryCatalog.AllBooks)
         {
@@ -69,7 +68,8 @@ public sealed class NcertLibraryService : INcertLibraryService
                 SubjectCategory = b.SubjectCategory,
                 Description = b.Description,
                 BadgeColorHex = b.BadgeColorHex,
-                EstimatedSizeDisplay = b.EstimatedSizeDisplay
+                EstimatedSizeDisplay = b.EstimatedSizeDisplay,
+                TotalChapters = b.TotalChapters
             };
             PopulateBookFromDisk(item);
             list.Add(item);
@@ -111,12 +111,20 @@ public sealed class NcertLibraryService : INcertLibraryService
                 book.IsDownloaded = false;
                 book.PrimaryPdfPath = null;
                 book.ClearChapters();
+                book.DownloadStatusText = "Available to Download";
             });
             return;
         }
 
         var pdfFiles = Directory.GetFiles(bookDir, "*.pdf")
-            .OrderBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase)
+            .OrderBy(f =>
+            {
+                string name = Path.GetFileName(f).ToLowerInvariant();
+                if (name.Contains("ps")) return -1;
+                if (name.Contains("an")) return 9999;
+                var m = Regex.Match(name, @"(\d+)\.pdf");
+                return m.Success && int.TryParse(m.Groups[1].Value, out int n) ? n : 500;
+            })
             .ToList();
 
         if (pdfFiles.Count == 0)
@@ -126,6 +134,7 @@ public sealed class NcertLibraryService : INcertLibraryService
                 book.IsDownloaded = false;
                 book.PrimaryPdfPath = null;
                 book.ClearChapters();
+                book.DownloadStatusText = "Available to Download";
             });
             return;
         }
@@ -159,11 +168,16 @@ public sealed class NcertLibraryService : INcertLibraryService
         }
 
         string primary = preferredPrimary ?? pdfFiles[0];
-        string statusText = $"{pdfFiles.Count} Chapter{(pdfFiles.Count > 1 ? "s" : "")} Downloaded";
+
+        // If only 1 PDF is present and book has multiple chapters, it was an incomplete download
+        bool isComplete = pdfFiles.Count > 1 || book.TotalChapters <= 1;
+        string statusText = isComplete
+            ? $"{pdfFiles.Count} Chapter{(pdfFiles.Count > 1 ? "s" : "")} Downloaded"
+            : $"1 of {book.TotalChapters} Chapters (Incomplete) • Download all";
 
         RunOnUIThread(() =>
         {
-            book.IsDownloaded = true;
+            book.IsDownloaded = isComplete;
             book.PrimaryPdfPath = primary;
             book.DownloadStatusText = statusText;
             book.UpdateChapters(chapterList);
@@ -219,7 +233,7 @@ public sealed class NcertLibraryService : INcertLibraryService
                         if (now - lastReportTick >= 100 || totalRead == totalBytes)
                         {
                             lastReportTick = now;
-                            double pct = Math.Min(90.0, (double)totalRead / totalBytes * 90.0);
+                            double pct = Math.Min(85.0, (double)totalRead / totalBytes * 85.0);
                             string mbStr = $"{totalRead / (1024.0 * 1024.0):F1} MB / {totalBytes / (1024.0 * 1024.0):F1} MB";
                             string status = $"Downloading {book.ShortTitle} ({pct:F0}%) • {mbStr}";
                             RunOnUIThread(() =>
@@ -231,31 +245,35 @@ public sealed class NcertLibraryService : INcertLibraryService
                         }
                     }
 
-                    zipSuccess = true;
-                }
-            }
-
-            if (zipSuccess && File.Exists(tempZip))
-            {
-                RunOnUIThread(() =>
-                {
-                    book.DownloadProgressPercent = 92;
-                    book.DownloadStatusText = "Extracting chapters...";
-                });
-                progress?.Report((92, "Extracting chapters..."));
-
-                await Task.Run(() =>
-                {
-                    using var archive = ZipFile.OpenRead(tempZip);
-                    foreach (var entry in archive.Entries)
+                    if (File.Exists(tempZip) && new FileInfo(tempZip).Length > 100000)
                     {
-                        if (entry.FullName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+                        RunOnUIThread(() =>
                         {
-                            string destPath = Path.Combine(bookDir, Path.GetFileName(entry.FullName));
-                            entry.ExtractToFile(destPath, overwrite: true);
+                            book.DownloadProgressPercent = 88;
+                            book.DownloadStatusText = "Extracting all chapters...";
+                        });
+                        progress?.Report((88, "Extracting all chapters..."));
+
+                        await Task.Run(() =>
+                        {
+                            using var archive = ZipFile.OpenRead(tempZip);
+                            foreach (var entry in archive.Entries)
+                            {
+                                if (entry.FullName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    string destPath = Path.Combine(bookDir, Path.GetFileName(entry.FullName));
+                                    entry.ExtractToFile(destPath, overwrite: true);
+                                }
+                            }
+                        }, ct).ConfigureAwait(false);
+
+                        var extractedPdfs = Directory.GetFiles(bookDir, "*.pdf");
+                        if (extractedPdfs.Length >= Math.Min(book.TotalChapters, 2))
+                        {
+                            zipSuccess = true;
                         }
                     }
-                }, ct).ConfigureAwait(false);
+                }
             }
         }
         catch
@@ -276,29 +294,54 @@ public sealed class NcertLibraryService : INcertLibraryService
             }
         }
 
-        // If zip failed or produced no PDFs, fallback to downloading chapter 1 directly
-        var existingPdfs = Directory.GetFiles(bookDir, "*.pdf");
-        if (existingPdfs.Length == 0)
+        // If ZIP failed or didn't extract the chapters, download ALL chapters individually
+        if (!zipSuccess)
         {
-            string ch1Url = $"https://ncert.nic.in/textbook/pdf/{book.Code}01.pdf";
-            string ch1Dest = Path.Combine(bookDir, $"{book.Code}01.pdf");
-
+            int totalExpected = Math.Max(book.TotalChapters, 1);
             RunOnUIThread(() =>
             {
-                book.DownloadStatusText = "Downloading Chapter 1...";
+                book.DownloadProgressPercent = 5;
+                book.DownloadStatusText = $"Downloading {book.ShortTitle} (all {totalExpected} chapters)...";
             });
-            progress?.Report((50, "Downloading Chapter 1..."));
+            progress?.Report((5, $"Downloading {book.ShortTitle} (all {totalExpected} chapters)..."));
 
-            using var chReq = new HttpRequestMessage(HttpMethod.Get, ch1Url);
-            chReq.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-            chReq.Headers.Add("Referer", "https://ncert.nic.in/");
+            // 1. Download Prelims / Table of Contents (*ps.pdf)
+            await DownloadSinglePdfFileAsync(book, "ps", bookDir, ct).ConfigureAwait(false);
 
-            using var chResp = await _http.SendAsync(chReq, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-            chResp.EnsureSuccessStatusCode();
+            // 2. Download all chapters (01.pdf through N.pdf)
+            int consecutiveFailures = 0;
+            for (int ch = 1; ch <= totalExpected + 3; ch++)
+            {
+                ct.ThrowIfCancellationRequested();
 
-            await using var contentStream = await chResp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-            await using var fileStream = new FileStream(ch1Dest, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
-            await contentStream.CopyToAsync(fileStream, ct).ConfigureAwait(false);
+                double pct = Math.Min(95.0, 5.0 + ((double)ch / totalExpected) * 88.0);
+                string chNumStr = $"{ch:D2}";
+                string statusMsg = $"Downloading Chapter {ch} of {totalExpected} ({pct:F0}%)...";
+
+                RunOnUIThread(() =>
+                {
+                    book.DownloadProgressPercent = pct;
+                    book.DownloadStatusText = statusMsg;
+                });
+                progress?.Report((pct, statusMsg));
+
+                bool ok = await DownloadSinglePdfFileAsync(book, chNumStr, bookDir, ct).ConfigureAwait(false);
+                if (ok)
+                {
+                    consecutiveFailures = 0;
+                }
+                else
+                {
+                    consecutiveFailures++;
+                    if (ch >= totalExpected && consecutiveFailures >= 2)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            // 3. Download Answers / Appendix (*an.pdf) if available
+            await DownloadSinglePdfFileAsync(book, "an", bookDir, ct).ConfigureAwait(false);
         }
 
         PopulateBookFromDisk(book);
@@ -306,11 +349,58 @@ public sealed class NcertLibraryService : INcertLibraryService
         {
             book.IsDownloading = false;
             book.DownloadProgressPercent = 100;
-            book.DownloadStatusText = "Downloaded and ready!";
+            book.DownloadStatusText = $"{book.Chapters.Count} Chapters Downloaded • Ready";
+            book.IsDownloaded = true;
         });
-        progress?.Report((100, "Downloaded and ready!"));
+        progress?.Report((100, $"{book.Chapters.Count} Chapters Downloaded • Ready"));
 
         return book.PrimaryPdfPath ?? string.Empty;
+    }
+
+    private async Task<bool> DownloadSinglePdfFileAsync(
+        NcertBookItem book,
+        string suffix,
+        string bookDir,
+        CancellationToken ct)
+    {
+        string fileName = $"{book.Code}{suffix}.pdf";
+        string destPath = Path.Combine(bookDir, fileName);
+
+        if (File.Exists(destPath) && new FileInfo(destPath).Length > 10240)
+        {
+            return true; // Already downloaded
+        }
+
+        string url = $"https://ncert.nic.in/textbook/pdf/{fileName}";
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            req.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+            req.Headers.Add("Referer", "https://ncert.nic.in/");
+
+            using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            if (!resp.IsSuccessStatusCode)
+            {
+                return false;
+            }
+
+            await using var contentStream = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+            await using var fileStream = new FileStream(destPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, true);
+            await contentStream.CopyToAsync(fileStream, ct).ConfigureAwait(false);
+
+            return File.Exists(destPath) && new FileInfo(destPath).Length > 1024;
+        }
+        catch
+        {
+            try
+            {
+                if (File.Exists(destPath)) File.Delete(destPath);
+            }
+            catch
+            {
+            }
+            return false;
+        }
     }
 
     public Task DeleteBookAsync(NcertBookItem book)
@@ -363,4 +453,3 @@ public sealed class NcertLibraryService : INcertLibraryService
         return $"Chapter {chNum}";
     }
 }
-

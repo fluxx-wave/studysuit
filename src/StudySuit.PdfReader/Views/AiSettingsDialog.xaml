@@ -3,7 +3,8 @@
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  xmlns:models="clr-namespace:StudySuit.PdfReader.Models"
-                 Title="AI Assistant &amp; Model Settings"
+                 Title="StudyMateAI - Assistant &amp; Model Settings"
+                 Icon="pack://application:,,,/Assets/app_logo.png"
                  Width="800"
                  Height="750"
                  MinWidth="660"
@@ -55,8 +56,8 @@
                                     PlaceholderText="e.g., http://localhost:11434 or https://api.openai.com/v1"
                                     Margin="0,0,0,12" />
 
-                        <TextBlock Text="Model Name" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4" />
-                        <Grid Margin="0,0,0,12">
+                        <TextBlock Text="Chat Model Name" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4" />
+                        <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
@@ -64,7 +65,7 @@
                             <ComboBox x:Name="ModelBox"
                                       Grid.Column="0"
                                       IsEditable="True"
-                                      ToolTip="Type any model ID or click Fetch Models to list installed/available models" />
+                                      ToolTip="Model used for text chat and document analysis" />
                             <ui:Button x:Name="FetchModelsButton"
                                        Grid.Column="1"
                                        Appearance="Secondary"
@@ -77,6 +78,12 @@
                                 </StackPanel>
                             </ui:Button>
                         </Grid>
+
+                        <CheckBox x:Name="AutoReferenceOpenPdfCheck"
+                                  Content="Auto-reference PDF when viewing a document in chat (Default: Off)"
+                                  ToolTip="When enabled, AI automatically includes context from the currently viewed PDF. When disabled (default: Off), AI only uses PDF context when you turn on 'Include PDF'."
+                                  FontSize="12"
+                                  Margin="0,0,0,12" />
 
                         <DockPanel Margin="0,0,0,4">
                             <TextBlock x:Name="ApiKeyHint"
@@ -138,12 +145,12 @@
                                        Click="PresetLlamaCppButton_Click">
                                 <StackPanel Orientation="Horizontal">
                                     <ui:SymbolIcon Symbol="Code24" FontSize="13" Margin="0,0,5,0" />
-                                    <TextBlock Text="llama.cpp (:8080)" FontSize="11.5" />
+                                    <TextBlock Text="llama.cpp (:9931)" FontSize="11.5" />
                                 </StackPanel>
                             </ui:Button>
                         </WrapPanel>
 
-                        <TextBlock Text="• Ollama: Run 'ollama run llama3.2' in terminal (default: http://localhost:11434)&#x0a;• LM Studio: Start Local Server in the Developer tab (default: http://localhost:1234/v1)&#x0a;• llama.cpp: Run 'llama-server.exe -m model.gguf --port 8080' (default: http://localhost:8080/v1)"
+                        <TextBlock Text="• Ollama: Run 'ollama run llama3.2' in terminal (default: http://localhost:11434)&#x0a;• LM Studio: Start Local Server in the Developer tab (default: http://localhost:1234/v1)&#x0a;• llama.cpp: Run 'llama-server.exe -m model.gguf --port 9931' (default: http://localhost:9931/v1)"
                                    FontSize="11"
                                    Foreground="{DynamicResource TextFillColorTertiaryBrush}"
                                    TextWrapping="Wrap" />
@@ -186,14 +193,12 @@
                             </StackPanel>
                         </Grid>
 
-                        <!-- Exam / Persona Preset, Answer Length & Voice Readout -->
+                        <!-- Exam / Persona Preset & Answer Length -->
                         <Grid Margin="0,0,0,14">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="12" />
-                                <ColumnDefinition Width="180" />
-                                <ColumnDefinition Width="12" />
-                                <ColumnDefinition Width="185" />
+                                <ColumnDefinition Width="14" />
+                                <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
 
                             <StackPanel Grid.Column="0">
@@ -212,17 +217,9 @@
                                           DisplayMemberPath="DisplayName"
                                           SelectedValuePath="Length" />
                             </StackPanel>
-
-                            <StackPanel Grid.Column="4">
-                                <TextBlock Text="Voice Mode" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4" />
-                                <ComboBox x:Name="VoiceModeBox"
-                                          ItemsSource="{x:Static models:AiPersonalisationDefaults.VoiceModes}"
-                                          DisplayMemberPath="DisplayName"
-                                          SelectedValuePath="Mode" />
-                            </StackPanel>
                         </Grid>
 
-                        <!-- Voice Engine, Pitch, Speed & Preview -->
+                        <!-- AI Tools & Interactive Agentic Capabilities Section -->
                         <Border Padding="14"
                                 CornerRadius="8"
                                 BorderThickness="1"
@@ -231,71 +228,89 @@
                                 Margin="0,0,0,14">
                             <StackPanel>
                                 <DockPanel Margin="0,0,0,10">
-                                    <ui:Button x:Name="PreviewVoiceButton"
+                                    <TextBlock Text="AI Tools &amp; Agentic Capabilities" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    <TextBlock Text="Control which tools the AI assistant is allowed to use"
                                                DockPanel.Dock="Right"
-                                               Appearance="Secondary"
-                                               Padding="10,5"
-                                               Click="PreviewVoiceButton_Click">
-                                        <StackPanel Orientation="Horizontal">
-                                            <ui:SymbolIcon x:Name="PreviewVoiceIcon" Symbol="Speaker224" FontSize="15" Margin="0,0,6,0" />
-                                            <TextBlock x:Name="PreviewVoiceLabel" Text="Preview Voice" FontSize="12" />
-                                        </StackPanel>
-                                    </ui:Button>
-                                    <TextBlock Text="Voice Model &amp; Speech Controls" FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                               FontSize="11"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                               VerticalAlignment="Center" />
                                 </DockPanel>
 
-                                <Grid Margin="0,0,0,10">
+                                <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="14" />
-                                        <ColumnDefinition Width="1.2*" />
+                                        <ColumnDefinition Width="16" />
+                                        <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
 
-                                    <!-- Voice Model Selection -->
+                                    <!-- Column 1 Tools -->
                                     <StackPanel Grid.Column="0">
-                                        <TextBlock Text="Voice Model / Synthesis Engine" FontSize="11.5" FontWeight="SemiBold" Margin="0,0,0,4" />
-                                        <ComboBox x:Name="VoiceModelBox"
-                                                  IsEditable="True"
-                                                  SelectionChanged="VoiceModelBox_SelectionChanged"
-                                                  ToolTip="Select Instagram Reels viral voice, Google Neural, or any installed Windows SAPI voice" />
+                                        <CheckBox x:Name="ToolWebSearchCheck"
+                                                  Content="Web Search (Google / DuckDuckGo)"
+                                                  FontSize="11.5" FontWeight="SemiBold"
+                                                  Margin="0,0,0,2"
+                                                  ToolTip="Allows the AI to search the web for up-to-date facts, current affairs, and research." />
+                                        <TextBlock Text="Live internet search for real-time data &amp; facts."
+                                                   FontSize="10.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                   Margin="24,0,0,8" />
+
+                                        <CheckBox x:Name="ToolFetchWebpageCheck"
+                                                  Content="Webpage Content Fetching (Dynamic &amp; Static)"
+                                                  FontSize="11.5" FontWeight="SemiBold"
+                                                  Margin="0,0,0,2"
+                                                  ToolTip="Allows AI to fetch, scrape, and read the full text of any URL link or website." />
+                                        <TextBlock Text="Extracts readable text from articles, documentation &amp; blogs."
+                                                   FontSize="10.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                   Margin="24,0,0,8" />
+
+                                        <CheckBox x:Name="ToolSketchfab3DCheck"
+                                                  Content="Sketchfab 3D Interactive Models"
+                                                  FontSize="11.5" FontWeight="SemiBold"
+                                                  Margin="0,0,0,2"
+                                                  ToolTip="Allows AI to find and embed interactive 3D models via CDN with orbit, zoom, and pan controls." />
+                                        <TextBlock Text="Embeds 360° 3D models for biology, anatomy, astronomy &amp; physics."
+                                                   FontSize="10.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                   Margin="24,0,0,8" />
+
+                                        <CheckBox x:Name="ToolImageSearchCheck"
+                                                  Content="Visual References &amp; Image Embedding"
+                                                  FontSize="11.5" FontWeight="SemiBold"
+                                                  Margin="0,0,0,2"
+                                                  ToolTip="Allows AI to search and embed relevant visual illustrations and photos." />
+                                        <TextBlock Text="Inline visual references for educational concepts."
+                                                   FontSize="10.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                   Margin="24,0,0,4" />
                                     </StackPanel>
 
-                                    <!-- Speed & Pitch Sliders -->
-                                    <Grid Grid.Column="2">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="12" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
+                                    <!-- Column 2 Tools -->
+                                    <StackPanel Grid.Column="2">
+                                        <CheckBox x:Name="ToolMermaidCheck"
+                                                  Content="Mermaid Diagrams &amp; Flowcharts"
+                                                  FontSize="11.5" FontWeight="SemiBold"
+                                                  Margin="0,0,0,2"
+                                                  ToolTip="Allows AI to generate interactive flowcharts, sequence diagrams, class models, and state diagrams." />
+                                        <TextBlock Text="Renders diagrams directly in the conversation flow."
+                                                   FontSize="10.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                   Margin="24,0,0,8" />
 
-                                        <!-- Speed -->
-                                        <StackPanel Grid.Column="0">
-                                            <DockPanel Margin="0,0,0,3">
-                                                <TextBlock x:Name="VoiceSpeedLabel" DockPanel.Dock="Right" Text="1.0x" FontSize="11" FontWeight="SemiBold" />
-                                                <TextBlock Text="Speed" FontSize="11.5" FontWeight="SemiBold" />
-                                            </DockPanel>
-                                            <Slider x:Name="VoiceSpeedSlider"
-                                                    Minimum="0.5"
-                                                    Maximum="2.0"
-                                                    TickFrequency="0.1"
-                                                    IsSnapToTickEnabled="True"
-                                                    ValueChanged="VoiceSpeedSlider_ValueChanged" />
-                                        </StackPanel>
+                                        <CheckBox x:Name="ToolChartsCheck"
+                                                  Content="Data Visualizations &amp; Charts"
+                                                  FontSize="11.5" FontWeight="SemiBold"
+                                                  Margin="0,0,0,2"
+                                                  ToolTip="Allows AI to render comparison charts, bar plots, and data tables." />
+                                        <TextBlock Text="Visual charts for comparisons and statistics."
+                                                   FontSize="10.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                   Margin="24,0,0,8" />
 
-                                        <!-- Pitch -->
-                                        <StackPanel Grid.Column="2">
-                                            <DockPanel Margin="0,0,0,3">
-                                                <TextBlock x:Name="VoicePitchLabel" DockPanel.Dock="Right" Text="0 (Neutral)" FontSize="11" FontWeight="SemiBold" />
-                                                <TextBlock Text="Pitch" FontSize="11.5" FontWeight="SemiBold" />
-                                            </DockPanel>
-                                            <Slider x:Name="VoicePitchSlider"
-                                                    Minimum="-10"
-                                                    Maximum="10"
-                                                    TickFrequency="1"
-                                                    IsSnapToTickEnabled="True"
-                                                    ValueChanged="VoicePitchSlider_ValueChanged" />
-                                        </StackPanel>
-                                    </Grid>
+                                        <CheckBox x:Name="ToolPdfToolsCheck"
+                                                  Content="PDF Deep Extraction &amp; Page Lookups"
+                                                  FontSize="11.5" FontWeight="SemiBold"
+                                                  Margin="0,0,0,2"
+                                                  ToolTip="Allows AI to inspect specific pages, extract formulas, and analyze document structure." />
+                                        <TextBlock Text="Context retrieval from opened PDF textbooks."
+                                                   FontSize="10.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                   Margin="24,0,0,8" />
+                                    </StackPanel>
                                 </Grid>
                             </StackPanel>
                         </Border>

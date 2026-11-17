@@ -11,10 +11,8 @@ namespace StudySuit.PdfReader.Views;
 public partial class AiSettingsDialog : FluentWindow
 {
     private readonly IAiChatService _chatService;
-    private readonly IVoiceReadoutService _voiceService;
     private readonly ILlamaCppAutoSetupService _llamaService;
     private bool _isInitializing = true;
-    private bool _isPreviewSpeaking;
 
     public AiAssistantSettings UpdatedSettings { get; private set; }
 
@@ -26,16 +24,11 @@ public partial class AiSettingsDialog : FluentWindow
     {
         InitializeComponent();
         _chatService = chatService;
-        _voiceService = voiceService ?? new VoiceReadoutService();
         _llamaService = llamaService ?? new LlamaCppAutoSetupService();
         UpdatedSettings = currentSettings.Clone();
 
         LoadFromSettings(UpdatedSettings);
         _isInitializing = false;
-        Closing += (_, _) =>
-        {
-            _voiceService.Stop();
-        };
     }
 
     private void LoadFromSettings(AiAssistantSettings s)
@@ -43,44 +36,27 @@ public partial class AiSettingsDialog : FluentWindow
         ProviderBox.SelectedItem = AiProviderDefaults.GetPreset(s.Provider);
         BaseUrlBox.Text = s.BaseUrl;
         ModelBox.Text = s.ModelName;
+        AutoReferenceOpenPdfCheck.IsChecked = s.AutoReferenceOpenPdf;
         ApiKeyBox.Password = s.ApiKey;
         TemperatureSlider.Value = Math.Clamp(s.Temperature, 0.0, 1.5);
         TempLabel.Text = TemperatureSlider.Value.ToString("0.0", CultureInfo.InvariantCulture);
         MaxTokensBox.Text = s.MaxTokens.ToString(CultureInfo.InvariantCulture);
         PersonaPresetBox.SelectedValue = s.PersonaPreset;
         AnswerLengthBox.SelectedValue = s.AnswerLength;
-        VoiceModeBox.SelectedValue = s.VoiceMode;
         SystemPromptBox.Text = s.SystemPrompt;
         IncludeResponseFormatCheck.IsChecked = s.IncludeResponseFormatSpec;
         ResponseFormatBox.Text = s.ResponseFormatPrompt;
         ResponseFormatBox.IsEnabled = s.IncludeResponseFormatSpec;
         UseInternetCheck.IsChecked = s.UseInternetByDefault;
 
-        // Voice Model, Speed & Pitch
-        var voiceList = new List<string>(AiPersonalisationDefaults.StandardVoiceModels);
-        try
-        {
-            var windowsVoices = _voiceService.GetInstalledWindowsVoices();
-            foreach (var wv in windowsVoices)
-            {
-                if (!voiceList.Contains(wv, StringComparer.OrdinalIgnoreCase))
-                {
-                    voiceList.Add(wv);
-                }
-            }
-        }
-        catch
-        {
-        }
-        VoiceModelBox.ItemsSource = voiceList;
-        VoiceModelBox.Text = string.IsNullOrWhiteSpace(s.VoiceModel) ? "Google Neural (Auto)" : s.VoiceModel;
-
-        VoiceSpeedSlider.Value = Math.Clamp(s.VoiceSpeed, 0.5, 2.0);
-        VoiceSpeedLabel.Text = $"{VoiceSpeedSlider.Value:0.0}x";
-
-        VoicePitchSlider.Value = Math.Clamp(s.VoicePitch, -10, 10);
-        int pitchVal = (int)Math.Round(VoicePitchSlider.Value);
-        VoicePitchLabel.Text = pitchVal == 0 ? "0 (Neutral)" : (pitchVal > 0 ? $"+{pitchVal}" : $"{pitchVal}");
+        // Tool toggles
+        ToolWebSearchCheck.IsChecked = s.EnableWebSearch;
+        ToolFetchWebpageCheck.IsChecked = s.EnableFetchWebpage;
+        ToolSketchfab3DCheck.IsChecked = s.EnableSketchfab3D;
+        ToolMermaidCheck.IsChecked = s.EnableMermaidDiagrams;
+        ToolChartsCheck.IsChecked = s.EnableCharts;
+        ToolPdfToolsCheck.IsChecked = s.EnablePdfTools;
+        ToolImageSearchCheck.IsChecked = s.EnableImageSearch;
 
         foreach (ComboBoxItem item in SearchProviderBox.Items)
         {
@@ -156,95 +132,6 @@ public partial class AiSettingsDialog : FluentWindow
         }
     }
 
-    private void VoiceSpeedSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (VoiceSpeedLabel is not null)
-        {
-            VoiceSpeedLabel.Text = $"{e.NewValue:0.0}x";
-        }
-    }
-
-    private void VoicePitchSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (VoicePitchLabel is not null)
-        {
-            int val = (int)Math.Round(e.NewValue);
-            VoicePitchLabel.Text = val == 0 ? "0 (Neutral)" : (val > 0 ? $"+{val}" : $"{val}");
-        }
-    }
-
-    private void VoiceModelBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (_isInitializing) return;
-        string selected = VoiceModelBox.SelectedItem?.ToString() ?? VoiceModelBox.Text ?? string.Empty;
-        if (selected.Contains("Reels Male Narrator", StringComparison.OrdinalIgnoreCase) ||
-            selected.Contains("Viral Baritone", StringComparison.OrdinalIgnoreCase))
-        {
-            if (VoicePitchSlider.Value == 0)
-            {
-                VoicePitchSlider.Value = -4;
-            }
-            if (Math.Abs(VoiceSpeedSlider.Value - 1.0) < 0.05)
-            {
-                VoiceSpeedSlider.Value = 1.05;
-            }
-        }
-    }
-
-    private async void PreviewVoiceButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_isPreviewSpeaking)
-        {
-            _voiceService.Stop();
-            _isPreviewSpeaking = false;
-            PreviewVoiceLabel.Text = "Preview Voice";
-            PreviewVoiceIcon.Symbol = SymbolRegular.Speaker224;
-            return;
-        }
-
-        _isPreviewSpeaking = true;
-        PreviewVoiceLabel.Text = "Stop";
-        PreviewVoiceIcon.Symbol = SymbolRegular.Stop24;
-
-        var mode = VoiceModeBox.SelectedValue is VoiceReadoutMode vm ? vm : VoiceReadoutMode.HindiDirect;
-        string selectedVoice = VoiceModelBox.Text?.Trim() ?? string.Empty;
-        bool isReels = selectedVoice.Contains("Reels", StringComparison.OrdinalIgnoreCase) ||
-                       selectedVoice.Contains("Instagram", StringComparison.OrdinalIgnoreCase);
-
-        string sampleText;
-        if (isReels)
-        {
-            sampleText = mode == VoiceReadoutMode.English
-                ? "Did you know? In the heart of ancient Rome, something astonishing was discovered. Welcome to StudySuit's viral Reels voice."
-                : "क्या आप जानते हैं? यह है स्टडीसूट का वायरल रील्स नैरेटर वॉइस। तैयार हैं आज की पढ़ाई के लिए?";
-        }
-        else
-        {
-            sampleText = mode == VoiceReadoutMode.English
-                ? "Hello! This is StudySuit AI voice preview at your chosen speed and pitch."
-                : "नमस्ते! यह आपकी चुनी हुई गति और पिच पर स्टडीसूट एआई आवाज़ का प्रिव्यू है।";
-        }
-
-        try
-        {
-            await _voiceService.SpeakAsync(
-                sampleText,
-                mode,
-                VoiceSpeedSlider.Value,
-                (int)Math.Round(VoicePitchSlider.Value),
-                VoiceModelBox.Text?.Trim());
-        }
-        catch
-        {
-        }
-        finally
-        {
-            _isPreviewSpeaking = false;
-            PreviewVoiceLabel.Text = "Preview Voice";
-            PreviewVoiceIcon.Symbol = SymbolRegular.Speaker224;
-        }
-    }
-
     private void PresetOllamaButton_Click(object sender, RoutedEventArgs e)
     {
         var preset = AiProviderDefaults.Presets.FirstOrDefault(p => p.Kind == AiProviderKind.OllamaLocal);
@@ -269,10 +156,10 @@ public partial class AiSettingsDialog : FluentWindow
     {
         var preset = AiProviderDefaults.Presets.FirstOrDefault(p => p.Kind == AiProviderKind.LlamaCppLocal);
         if (preset is not null) ProviderBox.SelectedItem = preset;
-        BaseUrlBox.Text = "http://localhost:8080/v1";
+        BaseUrlBox.Text = "http://localhost:9931/v1";
         if (string.IsNullOrWhiteSpace(ModelBox.Text)) ModelBox.Text = "qwen2.5-1.5b-instruct-q4_k_m.gguf";
         TestStatusText.Foreground = Brushes.Gray;
-        TestStatusText.Text = "Switched to llama.cpp preset (default port 8080).";
+        TestStatusText.Text = "Switched to llama.cpp preset (default port 9931).";
     }
 
     private AiAssistantSettings BuildSettingsFromForm()
@@ -299,9 +186,6 @@ public partial class AiSettingsDialog : FluentWindow
         string modelName = string.IsNullOrWhiteSpace(ModelBox.Text)
             ? preset.DefaultModel
             : ModelBox.Text.Trim();
-        string voiceModel = string.IsNullOrWhiteSpace(VoiceModelBox.Text)
-            ? "Google Neural (Auto)"
-            : VoiceModelBox.Text.Trim();
 
         return new AiAssistantSettings
         {
@@ -313,17 +197,23 @@ public partial class AiSettingsDialog : FluentWindow
             MaxTokens = Math.Clamp(maxTokens, 64, 32768),
             PersonaPreset = PersonaPresetBox.SelectedValue is AiPersonaPresetKind pk ? pk : AiPersonaPresetKind.General,
             AnswerLength = AnswerLengthBox.SelectedValue is AiAnswerLength al ? al : AiAnswerLength.Balanced,
-            VoiceMode = VoiceModeBox.SelectedValue is VoiceReadoutMode vm ? vm : VoiceReadoutMode.HindiDirect,
-            VoiceModel = voiceModel,
-            VoiceSpeed = Math.Round(VoiceSpeedSlider.Value, 1),
-            VoicePitch = (int)Math.Round(VoicePitchSlider.Value),
             SystemPrompt = SystemPromptBox.Text.Trim(),
             IncludeResponseFormatSpec = IncludeResponseFormatCheck.IsChecked == true,
             ResponseFormatPrompt = ResponseFormatBox.Text.Trim(),
             UseInternetByDefault = UseInternetCheck.IsChecked == true,
             WebSearchProvider = searchProvider,
             MaxWebResults = maxWeb,
-            WebSearchApiKey = SearchApiKeyBox.Password.Trim()
+            WebSearchApiKey = SearchApiKeyBox.Password.Trim(),
+            AutoReferenceOpenPdf = AutoReferenceOpenPdfCheck.IsChecked == true,
+
+            // Tools Section
+            EnableWebSearch = ToolWebSearchCheck.IsChecked == true,
+            EnableFetchWebpage = ToolFetchWebpageCheck.IsChecked == true,
+            EnableSketchfab3D = ToolSketchfab3DCheck.IsChecked == true,
+            EnableMermaidDiagrams = ToolMermaidCheck.IsChecked == true,
+            EnableCharts = ToolChartsCheck.IsChecked == true,
+            EnablePdfTools = ToolPdfToolsCheck.IsChecked == true,
+            EnableImageSearch = ToolImageSearchCheck.IsChecked == true
         };
     }
 
@@ -376,6 +266,7 @@ public partial class AiSettingsDialog : FluentWindow
                 string currentText = ModelBox.Text;
                 ModelBox.ItemsSource = models;
                 ModelBox.Text = string.IsNullOrWhiteSpace(currentText) ? models[0] : currentText;
+
                 ModelBox.IsDropDownOpen = true;
                 TestStatusText.Foreground = new SolidColorBrush(Color.FromRgb(74, 222, 128));
                 TestStatusText.Text = $"Found {models.Count} model(s).";

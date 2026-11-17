@@ -7,8 +7,10 @@
                  xmlns:models="clr-namespace:StudySuit.PdfReader.Models"
                  xmlns:vm="clr-namespace:StudySuit.PdfReader.ViewModels"
                  xmlns:controls="clr-namespace:StudySuit.PdfReader.Controls"
+                 xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
                  mc:Ignorable="d"
-                 Title="StudySuit PDF Reader"
+                 Title="StudyMateAI"
+                 Icon="pack://application:,,,/StudySuit.PdfReader;component/Assets/app_logo.png"
                  Width="1180"
                  Height="720"
                  MinWidth="540"
@@ -22,6 +24,7 @@
                  Drop="Window_Drop"
                  DragOver="Window_DragOver"
                  PreviewKeyDown="Window_PreviewKeyDown"
+                 PreviewKeyUp="Window_PreviewKeyUp"
                  SizeChanged="MainWindow_SizeChanged">
 
     <Window.Resources>
@@ -76,11 +79,11 @@
         <!-- Row 0: Custom Fluent TitleBar -->
         <ui:TitleBar x:Name="AppTitleBar"
                      Grid.Row="0"
-                     Title="StudySuit PDF"
+                     Title="StudyMateAI"
                      Height="38"
                      Visibility="{Binding IsFullScreen, Converter={StaticResource InverseBoolToVis}}">
             <ui:TitleBar.Icon>
-                <ui:SymbolIcon Symbol="DocumentPdf24" FontSize="18" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                <ui:ImageIcon Source="pack://application:,,,/StudySuit.PdfReader;component/Assets/app_logo.png" Width="20" Height="20" />
             </ui:TitleBar.Icon>
             <ui:TitleBar.TrailingContent>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
@@ -998,18 +1001,7 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition x:Name="AiSidebarColumn" MinWidth="0">
-                    <ColumnDefinition.Style>
-                        <Style TargetType="ColumnDefinition">
-                            <Setter Property="Width" Value="0" />
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding ShowAiSidebar}" Value="True">
-                                    <Setter Property="Width" Value="420" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </ColumnDefinition.Style>
-                </ColumnDefinition>
+                <ColumnDefinition x:Name="AiSidebarColumn" Width="0" MinWidth="0" />
             </Grid.ColumnDefinitions>
 
             <Grid Grid.Column="0">
@@ -1028,7 +1020,7 @@
                               PanningRatio="1.0"
                               IsManipulationEnabled="True"
                               Padding="28,20">
-                    <StackPanel MaxWidth="1360" HorizontalAlignment="Stretch">
+                    <StackPanel HorizontalAlignment="Stretch">
                         <!-- Dashboard Header -->
                         <DockPanel Margin="0,0,0,18">
                             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
@@ -1052,11 +1044,16 @@
                             </StackPanel>
 
                             <StackPanel>
-                                <TextBlock Text="StudySuit Home Dashboard" FontSize="25" FontWeight="SemiBold" />
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Border Width="34" Height="34" CornerRadius="8" Margin="0,0,10,0" ClipToBounds="True">
+                                        <Image Source="Assets/app_logo.png" Width="34" Height="34" RenderOptions.BitmapScalingMode="HighQuality" />
+                                    </Border>
+                                    <TextBlock Text="StudyMateAI Home Dashboard" FontSize="25" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                </StackPanel>
                                 <TextBlock Text="Track your study time, manage calendar events &amp; reminders, check off to-dos, and resume reading PDFs."
                                            FontSize="13"
                                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                           Margin="0,4,0,0" />
+                                           Margin="0,6,0,0" />
                             </StackPanel>
                         </DockPanel>
 
@@ -2084,6 +2081,7 @@
                                           Stylus.IsPressAndHoldEnabled="False"
                                           Stylus.IsFlicksEnabled="False"
                                           MouseEnter="PageSurface_MouseEnter"
+                                          MouseLeave="PageSurface_MouseLeave"
                                           MouseLeftButtonDown="PageSurface_MouseLeftButtonDown"
                                           MouseMove="PageSurface_MouseMove"
                                           MouseLeftButtonUp="PageSurface_MouseLeftButtonUp"
@@ -2129,6 +2127,9 @@
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding DataContext.SelectedTab.ActiveTool, RelativeSource={RelativeSource AncestorType=Window}}" Value="TextBox">
                                                         <Setter Property="Cursor" Value="IBeam" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding DataContext.SelectedTab.ActiveTool, RelativeSource={RelativeSource AncestorType=Window}}" Value="Eraser">
+                                                        <Setter Property="Cursor" Value="Cross" />
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
@@ -3098,149 +3099,301 @@
                                   IsManipulationEnabled="True"
                                   PreviewMouseWheel="NewsFeedScrollViewer_PreviewMouseWheel"
                                   Padding="24,14">
-                        <Grid MaxWidth="1020">
+                        <Grid HorizontalAlignment="Stretch">
                             <ItemsControl ItemsSource="{Binding FilteredItems}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate DataType="{x:Type models:NewsFeedItem}">
-                                        <Border Padding="14"
-                                                Margin="0,0,0,12"
-                                                CornerRadius="10"
+                                        <Border Width="{Binding CardWidth}"
+                                                Height="{Binding CardHeight}"
+                                                Margin="0,0,16,16"
+                                                CornerRadius="14"
                                                 BorderThickness="1"
                                                 BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-                                                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                                                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                                ClipToBounds="True">
                                             <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <!-- Lead Thumbnail Column -->
-                                                    <ColumnDefinition Width="Auto" />
-                                                    <!-- Details & Controls Column -->
-                                                    <ColumnDefinition Width="*" />
-                                                </Grid.ColumnDefinitions>
-
-                                                <!-- Lead Thumbnail Image (Clickable) -->
-                                                <Border Grid.Column="0"
-                                                        Width="180"
-                                                        Height="116"
-                                                        CornerRadius="8"
-                                                        ClipToBounds="True"
-                                                        Margin="0,0,16,0"
-                                                        VerticalAlignment="Top"
-                                                        Cursor="Hand"
-                                                        Background="{DynamicResource SubtleFillColorSecondaryBrush}">
-                                                    <Border.InputBindings>
-                                                        <MouseBinding MouseAction="LeftClick"
-                                                                      Command="{Binding DataContext.NewsFeed.OpenArticleCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                      CommandParameter="{Binding}" />
-                                                    </Border.InputBindings>
+                                                <!-- ================= 1. HERO WIDE CARD (MSN Featured Top Story Style) ================= -->
+                                                <Grid Visibility="{Binding IsHero, Converter={StaticResource BoolToVis}}">
+                                                    <!-- Full Bleed Background Image -->
                                                     <Grid>
-                                                        <ui:SymbolIcon Symbol="News24"
-                                                                       FontSize="32"
-                                                                       Foreground="{DynamicResource TextFillColorTertiaryBrush}"
-                                                                       HorizontalAlignment="Center"
-                                                                       VerticalAlignment="Center" />
-                                                        <Image Source="{Binding ImageUrl}"
+                                                        <Border Background="#1E293B">
+                                                            <ui:SymbolIcon Symbol="News24"
+                                                                           FontSize="42"
+                                                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                                                           HorizontalAlignment="Center"
+                                                                           VerticalAlignment="Center" />
+                                                        </Border>
+                                                        <Image Source="{Binding ImageBitmap}"
                                                                Stretch="UniformToFill"
                                                                RenderOptions.BitmapScalingMode="HighQuality" />
                                                     </Grid>
-                                                </Border>
 
-                                                <!-- Article Details & Actions -->
-                                                <StackPanel Grid.Column="1">
-                                                    <DockPanel Margin="0,0,0,6">
-                                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                                                            <!-- Read in App (Primary CTA) -->
-                                                            <ui:Button Appearance="Primary"
-                                                                       Padding="10,4"
-                                                                       Margin="0,0,6,0"
-                                                                       ToolTip="Read full article inside StudySuit"
-                                                                       Command="{Binding DataContext.NewsFeed.OpenArticleCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                       CommandParameter="{Binding}">
+                                                    <!-- Top Shadow & Bottom Rich Dark Gradient Overlay -->
+                                                    <Grid>
+                                                        <Border VerticalAlignment="Top" Height="70">
+                                                            <Border.Background>
+                                                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                                                    <GradientStop Color="#A0000000" Offset="0" />
+                                                                    <GradientStop Color="#00000000" Offset="1" />
+                                                                </LinearGradientBrush>
+                                                            </Border.Background>
+                                                        </Border>
+                                                        <Border VerticalAlignment="Bottom" Height="220">
+                                                            <Border.Background>
+                                                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                                                    <GradientStop Color="#00050810" Offset="0" />
+                                                                    <GradientStop Color="#CC050810" Offset="0.45" />
+                                                                    <GradientStop Color="#F5050810" Offset="1" />
+                                                                </LinearGradientBrush>
+                                                            </Border.Background>
+                                                        </Border>
+                                                    </Grid>
+
+                                                    <!-- Top Badges -->
+                                                    <DockPanel VerticalAlignment="Top" Margin="14,12">
+                                                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                                                            <Border Padding="8,4" CornerRadius="6" Background="#EF4444" Margin="0,0,8,0">
                                                                 <StackPanel Orientation="Horizontal">
-                                                                    <ui:SymbolIcon Symbol="DocumentBulletList24" FontSize="13.5" Margin="0,0,5,0" />
-                                                                    <TextBlock Text="Read" FontSize="11.5" FontWeight="SemiBold" />
+                                                                    <ui:SymbolIcon Symbol="Flash24" FontSize="11" Foreground="#FFFFFF" Margin="0,0,4,0" />
+                                                                    <TextBlock Text="TOP STORY" FontSize="10" FontWeight="Bold" Foreground="#FFFFFF" />
                                                                 </StackPanel>
-                                                            </ui:Button>
-
-                                                            <!-- Read Aloud (Hindi Voice) -->
-                                                            <ui:Button Appearance="Transparent"
-                                                                       Padding="7,4"
-                                                                       Margin="0,0,4,0"
-                                                                       ToolTip="Read Article Aloud (Hindi / Voice)"
-                                                                       Command="{Binding DataContext.NewsFeed.ReadArticleAloudCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                       CommandParameter="{Binding}"
-                                                                       Visibility="{Binding IsSpeaking, Converter={StaticResource InverseBoolToVis}}">
-                                                                <StackPanel Orientation="Horizontal">
-                                                                    <ui:SymbolIcon Symbol="Speaker224" FontSize="14" Foreground="#FF38BDF8" Margin="0,0,4,0" />
-                                                                    <TextBlock Text="Listen" FontSize="11.5" />
-                                                                </StackPanel>
-                                                            </ui:Button>
-
-                                                            <ui:Button Appearance="Transparent"
-                                                                       Padding="7,4"
-                                                                       Margin="0,0,4,0"
-                                                                       ToolTip="Stop Reading"
-                                                                       Command="{Binding DataContext.NewsFeed.StopArticleReadoutCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                       Visibility="{Binding IsSpeaking, Converter={StaticResource BoolToVis}}">
-                                                                <StackPanel Orientation="Horizontal">
-                                                                    <ui:SymbolIcon Symbol="Stop24" FontSize="14" Foreground="#FFF87171" Margin="0,0,4,0" />
-                                                                    <TextBlock Text="Stop" FontSize="11.5" Foreground="#FFF87171" />
-                                                                </StackPanel>
-                                                            </ui:Button>
-
-                                                            <!-- Ask AI -->
-                                                            <ui:Button Appearance="Secondary"
-                                                                       Padding="8,4"
-                                                                       Margin="0,0,4,0"
-                                                                       ToolTip="Analyze this story with AI Study Assistant"
-                                                                       Command="{Binding DataContext.NewsFeed.DiscussWithAiCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                       CommandParameter="{Binding}">
-                                                                <StackPanel Orientation="Horizontal">
-                                                                    <ui:SymbolIcon Symbol="BotSparkle24" FontSize="13.5" Margin="0,0,4,0" />
-                                                                    <TextBlock Text="Ask AI" FontSize="11.5" />
-                                                                </StackPanel>
-                                                            </ui:Button>
-
-                                                            <!-- Open in External Browser -->
-                                                            <ui:Button Appearance="Transparent"
-                                                                       Padding="6,4"
-                                                                       ToolTip="Open in external browser"
-                                                                       Tag="{Binding Url}"
-                                                                       Click="OpenWebSourceUrl_Click">
-                                                                <ui:SymbolIcon Symbol="Open24" FontSize="13" />
-                                                            </ui:Button>
-                                                        </StackPanel>
-
-                                                        <!-- Badges: Source, Category, Published -->
-                                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                            <Border Padding="7,2" CornerRadius="4" Background="{DynamicResource SubtleFillColorSecondaryBrush}" Margin="0,0,8,0">
-                                                                <TextBlock Text="{Binding Source}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
                                                             </Border>
-                                                            <TextBlock Text="{Binding CategoryLabel}" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                                            <TextBlock Text="{Binding PublishedDisplay}" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                                                            <Border Padding="8,4" CornerRadius="6" Background="#D01E293B">
+                                                                <TextBlock Text="{Binding Source}" FontSize="10.5" FontWeight="SemiBold" Foreground="#F8FAFC" />
+                                                            </Border>
                                                         </StackPanel>
+                                                        <Border HorizontalAlignment="Right"
+                                                                Padding="8,4"
+                                                                CornerRadius="6"
+                                                                Background="#B0000000">
+                                                            <TextBlock Text="{Binding PublishedDisplay}" FontSize="10.5" FontWeight="Medium" Foreground="#E2E8F0" />
+                                                        </Border>
                                                     </DockPanel>
 
-                                                    <!-- Clickable Title -->
-                                                    <TextBlock Text="{Binding Title}"
-                                                               FontSize="15"
-                                                               FontWeight="SemiBold"
-                                                               TextWrapping="Wrap"
-                                                               Cursor="Hand"
-                                                               Margin="0,0,0,4">
-                                                        <TextBlock.InputBindings>
+                                                    <!-- Bottom Content Area -->
+                                                    <StackPanel VerticalAlignment="Bottom" Margin="18,0,18,14">
+                                                        <!-- Category Pill -->
+                                                        <TextBlock Text="{Binding CategoryLabel}"
+                                                                   FontSize="11"
+                                                                   FontWeight="Bold"
+                                                                   Foreground="#38BDF8"
+                                                                   Margin="0,0,0,4" />
+
+                                                        <!-- Clickable Hero Headline -->
+                                                        <TextBlock Text="{Binding Title}"
+                                                                   FontSize="17.5"
+                                                                   FontWeight="Bold"
+                                                                   Foreground="#FFFFFF"
+                                                                   LineHeight="24"
+                                                                   TextWrapping="Wrap"
+                                                                   MaxHeight="50"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   Cursor="Hand"
+                                                                   Margin="0,0,0,6">
+                                                            <TextBlock.InputBindings>
+                                                                <MouseBinding MouseAction="LeftClick"
+                                                                              Command="{Binding DataContext.NewsFeed.OpenArticleCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                              CommandParameter="{Binding}" />
+                                                            </TextBlock.InputBindings>
+                                                        </TextBlock>
+
+                                                        <!-- Summary Excerpt -->
+                                                        <TextBlock Text="{Binding Summary}"
+                                                                   FontSize="12"
+                                                                   Foreground="#CBD5E1"
+                                                                   TextWrapping="Wrap"
+                                                                   MaxHeight="34"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   Margin="0,0,0,10"
+                                                                   Visibility="{Binding HasSummary, Converter={StaticResource BoolToVis}}" />
+
+                                                        <!-- Hero Actions -->
+                                                        <DockPanel>
+                                                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                                                <ui:Button Appearance="Transparent"
+                                                                           Padding="7,5"
+                                                                           ToolTip="Open in external browser"
+                                                                           Tag="{Binding Url}"
+                                                                           Click="OpenWebSourceUrl_Click">
+                                                                    <ui:SymbolIcon Symbol="Open24" FontSize="13" Foreground="#E2E8F0" />
+                                                                </ui:Button>
+                                                                <ui:Button Appearance="Primary"
+                                                                           Padding="12,5"
+                                                                           Margin="6,0,0,0"
+                                                                           ToolTip="View original page in feed"
+                                                                           Command="{Binding DataContext.NewsFeed.OpenArticleCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                           CommandParameter="{Binding}">
+                                                                    <StackPanel Orientation="Horizontal">
+                                                                        <ui:SymbolIcon Symbol="Globe24" FontSize="13" Margin="0,0,5,0" />
+                                                                        <TextBlock Text="Read Source" FontSize="11.5" FontWeight="SemiBold" />
+                                                                    </StackPanel>
+                                                                </ui:Button>
+                                                            </StackPanel>
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <ui:Button Appearance="Secondary"
+                                                                           Padding="10,5"
+                                                                           ToolTip="Analyze this story with AI"
+                                                                           Command="{Binding DataContext.NewsFeed.DiscussWithAiCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                           CommandParameter="{Binding}">
+                                                                    <StackPanel Orientation="Horizontal">
+                                                                        <ui:SymbolIcon Symbol="BotSparkle24" FontSize="12" Margin="0,0,4,0" />
+                                                                        <TextBlock Text="Ask AI" FontSize="11" />
+                                                                    </StackPanel>
+                                                                </ui:Button>
+                                                            </StackPanel>
+                                                        </DockPanel>
+                                                    </StackPanel>
+                                                </Grid>
+
+                                                <!-- ================= 2. STANDARD CARD (MSN Standard Layout) ================= -->
+                                                <Grid Visibility="{Binding IsHero, Converter={StaticResource InverseBoolToVis}}">
+                                                    <Grid.RowDefinitions>
+                                                        <!-- 16:9 Thumbnail Image -->
+                                                        <RowDefinition Height="175" />
+                                                        <!-- Headline, Summary & Actions -->
+                                                        <RowDefinition Height="*" />
+                                                    </Grid.RowDefinitions>
+
+                                                    <!-- Top Thumbnail Image with Dark Gradient & Badges -->
+                                                    <Border Grid.Row="0"
+                                                            ClipToBounds="True"
+                                                            Cursor="Hand"
+                                                            Background="{DynamicResource SubtleFillColorSecondaryBrush}">
+                                                        <Border.InputBindings>
                                                             <MouseBinding MouseAction="LeftClick"
                                                                           Command="{Binding DataContext.NewsFeed.OpenArticleCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                           CommandParameter="{Binding}" />
-                                                        </TextBlock.InputBindings>
-                                                    </TextBlock>
+                                                        </Border.InputBindings>
+                                                        <Grid>
+                                                            <ui:SymbolIcon Symbol="News24"
+                                                                           FontSize="36"
+                                                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                                                           HorizontalAlignment="Center"
+                                                                           VerticalAlignment="Center" />
+                                                            <Image Source="{Binding ImageBitmap}"
+                                                                   Stretch="UniformToFill"
+                                                                   RenderOptions.BitmapScalingMode="HighQuality" />
 
-                                                    <TextBlock Text="{Binding Summary}"
-                                                               FontSize="12.5"
-                                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                                               TextWrapping="Wrap"
-                                                               MaxHeight="44"
-                                                               TextTrimming="CharacterEllipsis"
-                                                               Visibility="{Binding HasSummary, Converter={StaticResource BoolToVis}}" />
-                                                </StackPanel>
+                                                            <!-- Bottom Gradient for Legibility -->
+                                                            <Border VerticalAlignment="Bottom" Height="55">
+                                                                <Border.Background>
+                                                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                                                        <GradientStop Color="#00000000" Offset="0" />
+                                                                        <GradientStop Color="#90000000" Offset="1" />
+                                                                    </LinearGradientBrush>
+                                                                </Border.Background>
+                                                            </Border>
+
+                                                            <!-- Source Badge on Top Left -->
+                                                            <Border HorizontalAlignment="Left" VerticalAlignment="Top"
+                                                                    Margin="10"
+                                                                    Padding="8,3.5"
+                                                                    CornerRadius="6"
+                                                                    Background="#D01E293B">
+                                                                <TextBlock Text="{Binding Source}" FontSize="10.5" FontWeight="SemiBold" Foreground="#F8FAFC" />
+                                                            </Border>
+
+                                                            <!-- Time Badge on Top Right -->
+                                                            <Border HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                                    Margin="10"
+                                                                    Padding="7,3"
+                                                                    CornerRadius="6"
+                                                                    Background="#B0000000">
+                                                                <TextBlock Text="{Binding PublishedDisplay}" FontSize="10" Foreground="#E2E8F0" />
+                                                            </Border>
+                                                        </Grid>
+                                                    </Border>
+
+                                                    <!-- Card Body -->
+                                                    <Grid Grid.Row="1" Margin="14,10,14,10">
+                                                        <Grid.RowDefinitions>
+                                                            <RowDefinition Height="*" />
+                                                            <RowDefinition Height="Auto" />
+                                                        </Grid.RowDefinitions>
+
+                                                        <StackPanel Grid.Row="0">
+                                                            <!-- Category Label -->
+                                                            <TextBlock Text="{Binding CategoryLabel}"
+                                                                       FontSize="10.5"
+                                                                       FontWeight="SemiBold"
+                                                                       Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}"
+                                                                       Margin="0,0,0,3" />
+
+                                                            <!-- Clickable Title -->
+                                                            <TextBlock Text="{Binding Title}"
+                                                                       FontSize="13.5"
+                                                                       FontWeight="SemiBold"
+                                                                       TextWrapping="Wrap"
+                                                                       MaxHeight="42"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       Cursor="Hand"
+                                                                       Margin="0,0,0,4">
+                                                                <TextBlock.InputBindings>
+                                                                    <MouseBinding MouseAction="LeftClick"
+                                                                                  Command="{Binding DataContext.NewsFeed.OpenArticleCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                                  CommandParameter="{Binding}" />
+                                                                </TextBlock.InputBindings>
+                                                            </TextBlock>
+
+                                                            <!-- Summary Excerpt -->
+                                                            <TextBlock Text="{Binding Summary}"
+                                                                       FontSize="11.5"
+                                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                                       TextWrapping="Wrap"
+                                                                       MaxHeight="36"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       Visibility="{Binding HasSummary, Converter={StaticResource BoolToVis}}" />
+                                                        </StackPanel>
+
+                                                        <!-- Bottom Action Bar (MSN Card Style) -->
+                                                        <Border Grid.Row="1"
+                                                                BorderThickness="0,1,0,0"
+                                                                BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                                                                Padding="0,8,0,0"
+                                                                Margin="0,4,0,0">
+                                                            <DockPanel>
+                                                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                    <ui:Button Appearance="Transparent"
+                                                                               Padding="6,4"
+                                                                               ToolTip="Open in external browser"
+                                                                               Tag="{Binding Url}"
+                                                                               Click="OpenWebSourceUrl_Click">
+                                                                        <ui:SymbolIcon Symbol="Open24" FontSize="13" />
+                                                                    </ui:Button>
+                                                                    <ui:Button Appearance="Primary"
+                                                                               Padding="10,4"
+                                                                               Margin="4,0,0,0"
+                                                                               ToolTip="Read full article"
+                                                                               Command="{Binding DataContext.NewsFeed.OpenArticleCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                               CommandParameter="{Binding}">
+                                                                        <StackPanel Orientation="Horizontal">
+                                                                            <ui:SymbolIcon Symbol="DocumentBulletList24" FontSize="12" Margin="0,0,4,0" />
+                                                                            <TextBlock Text="Read" FontSize="11" FontWeight="SemiBold" />
+                                                                        </StackPanel>
+                                                                    </ui:Button>
+                                                                </StackPanel>
+
+                                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                                    <ui:Button Appearance="Secondary"
+                                                                               Padding="8,4"
+                                                                               ToolTip="Analyze this story with AI"
+                                                                               Command="{Binding DataContext.NewsFeed.DiscussWithAiCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                               CommandParameter="{Binding}">
+                                                                        <StackPanel Orientation="Horizontal">
+                                                                            <ui:SymbolIcon Symbol="BotSparkle24" FontSize="12" Margin="0,0,4,0" />
+                                                                            <TextBlock Text="Ask AI" FontSize="11" />
+                                                                        </StackPanel>
+                                                                    </ui:Button>
+                                                                </StackPanel>
+                                                            </DockPanel>
+                                                        </Border>
+                                                    </Grid>
+                                                </Grid>
                                             </Grid>
                                         </Border>
                                     </DataTemplate>
@@ -3303,6 +3456,41 @@
                                 <TextBlock Text="{Binding SelectedArticle.PublishedDisplay}" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
                             </StackPanel>
 
+                            <!-- Center: Mode Switcher Capsule (Live Web vs Text Reader) -->
+                            <Border Margin="14,0"
+                                    Padding="3"
+                                    CornerRadius="8"
+                                    VerticalAlignment="Center"
+                                    HorizontalAlignment="Center"
+                                    Background="{DynamicResource SubtleFillColorSecondaryBrush}">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:Button Appearance="Secondary"
+                                               Padding="10,4"
+                                               Click="ToggleWebMode_Click"
+                                               ToolTip="View original live web page from source">
+                                        <StackPanel Orientation="Horizontal">
+                                            <ui:SymbolIcon Symbol="Globe24" FontSize="13" Margin="0,0,5,0" />
+                                            <TextBlock Text="Live Webpage" FontSize="11.5" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                    </ui:Button>
+                                    <ui:Button Appearance="Transparent"
+                                               Padding="10,4"
+                                               Click="ToggleReaderMode_Click"
+                                               ToolTip="Distraction-free study text reader">
+                                        <StackPanel Orientation="Horizontal">
+                                            <ui:SymbolIcon Symbol="ReadingModeMobile24" FontSize="13" Margin="0,0,5,0" />
+                                            <TextBlock Text="Study Reader" FontSize="11.5" />
+                                        </StackPanel>
+                                    </ui:Button>
+                                    <ui:Button Appearance="Transparent"
+                                               Padding="6,4"
+                                               Click="NewsArticleWebView_Reload_Click"
+                                               ToolTip="Reload Webpage">
+                                        <ui:SymbolIcon Symbol="ArrowClockwise24" FontSize="13" />
+                                    </ui:Button>
+                                </StackPanel>
+                            </Border>
+
                             <!-- Right: Audio & AI Controls -->
                             <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
                                 <!-- Listen Aloud Button -->
@@ -3355,9 +3543,19 @@
                         </DockPanel>
                     </Border>
 
-                    <!-- Scrollable In-App Reader Canvas -->
-                    <ScrollViewer Grid.Row="1"
-                                  VerticalScrollBarVisibility="Auto"
+                    <!-- Reader Content: Live Web View or Text Canvas -->
+                    <Grid Grid.Row="1">
+                        <!-- Live Web View (Original Page from Source) -->
+                        <Grid Visibility="{Binding IsWebMode, Converter={StaticResource BoolToVis}}">
+                            <wv2:WebView2 x:Name="NewsArticleWebView"
+                                          HorizontalAlignment="Stretch"
+                                          VerticalAlignment="Stretch"
+                                          DefaultBackgroundColor="#0F172A" />
+                        </Grid>
+
+                        <!-- Scrollable In-App Reader Canvas -->
+                        <ScrollViewer Visibility="{Binding IsWebMode, Converter={StaticResource InverseBoolToVis}}"
+                                      VerticalScrollBarVisibility="Auto"
                                   PanningMode="VerticalOnly"
                                   PanningDeceleration="0.001"
                                   PanningRatio="1.0"
@@ -3381,7 +3579,7 @@
                                         <TextBlock Text="• " Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12.5" />
                                         <TextBlock Text="{Binding SelectedArticle.PublishedDisplay}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12.5" />
                                     </StackPanel>
-                                    <TextBlock DockPanel.Dock="Right" Text="StudySuit In-App Reader" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Right" />
+                                    <TextBlock DockPanel.Dock="Right" Text="StudyMateAI In-App Reader" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Right" />
                                 </DockPanel>
                             </Border>
 
@@ -3428,7 +3626,7 @@
                                 <StackPanel>
                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                         <ui:SymbolIcon Symbol="Sparkle24" FontSize="18" Foreground="#FF38BDF8" Margin="0,0,8,0" />
-                                        <TextBlock Text="StudySuit AI • Instant Study &amp; Exam Insights" FontWeight="SemiBold" FontSize="14" />
+                                        <TextBlock Text="StudyMateAI • Instant Study &amp; Exam Insights" FontWeight="SemiBold" FontSize="14" />
                                     </StackPanel>
                                     <TextBlock Text="Turn this story into exam preparation notes, conceptual breakdowns, or test practice questions."
                                                FontSize="12.5"
@@ -3485,6 +3683,7 @@
                             </ui:Button>
                         </StackPanel>
                     </ScrollViewer>
+                    </Grid>
                 </Grid>
             </Grid>
         </Grid>
@@ -3549,7 +3748,7 @@
                                 <TextBlock Text="Classes 6–12 • Direct In-App Downloads" FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" VerticalAlignment="Center" />
                             </Border>
                         </StackPanel>
-                        <TextBlock Text="Official NCERT textbooks downloaded directly inside StudySuit — open any book or chapter with AI study partner &amp; voice readout."
+                        <TextBlock Text="Official NCERT textbooks downloaded directly inside StudyMateAI — open any book or chapter with AI study partner &amp; voice readout."
                                    FontSize="11.5"
                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                     </StackPanel>
@@ -3781,7 +3980,7 @@
                                                        IsEnabled="{Binding IsDownloading, Converter={StaticResource InverseBoolToVis}}">
                                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                                     <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center" />
-                                                    <TextBlock Text="Download Book" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                    <TextBlock Text="{Binding ActionButtonText}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
                                                 </StackPanel>
                                             </ui:Button>
 
@@ -3928,6 +4127,42 @@
                 </Border.RenderTransform>
 
                 <Grid DataContext="{Binding AiAssistant}">
+                    <Grid.Resources>
+                        <Style x:Key="AppleCapsuleToggleStyle" TargetType="{x:Type ToggleButton}">
+                            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                            <Setter Property="Cursor" Value="Hand" />
+                            <Setter Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                            <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}" />
+                            <Setter Property="BorderThickness" Value="1" />
+                            <Setter Property="Padding" Value="11,5" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="{x:Type ToggleButton}">
+                                        <Border x:Name="PillBorder"
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                CornerRadius="14"
+                                                Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center" />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="PillBorder" Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                                <Setter TargetName="PillBorder" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                                <Setter TargetName="PillBorder" Property="BorderThickness" Value="1" />
+                                                <Setter Property="TextElement.Foreground" Value="#FFFFFF" />
+                                            </Trigger>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="PillBorder" Property="Opacity" Value="0.9" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </Grid.Resources>
+
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
@@ -3943,6 +4178,7 @@
                             BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
                         <DockPanel>
                             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+
                                 <ui:Button Appearance="Transparent"
                                            Padding="6"
                                            ToolTip="New Chat (+)"
@@ -3989,8 +4225,18 @@
                         </DockPanel>
                     </Border>
 
-                    <!-- Quick Study Prompt Chips -->
-                    <Border Grid.Row="1"
+                    <!-- ==================== TEXT CHAT VIEW ==================== -->
+                    <Grid Grid.Row="1" Grid.RowSpan="4"
+                          Visibility="{Binding IsOmniTalkView, Converter={StaticResource InverseBoolToVis}}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <!-- Quick Study Prompt Chips -->
+                        <Border Grid.Row="0"
                             Padding="10,7"
                             BorderThickness="0,0,0,1"
                             BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
@@ -4018,8 +4264,8 @@
                         </WrapPanel>
                     </Border>
 
-                    <!-- Row 2: Chat Messages Feed & Watermark Placeholder -->
-                    <Grid Grid.Row="2">
+                        <!-- Chat Messages Feed & Watermark Placeholder -->
+                        <Grid Grid.Row="1">
                         <!-- Clean Empty State Watermark Placeholder (shown when chat has 0 messages) -->
                         <Border HorizontalAlignment="Center"
                                 VerticalAlignment="Center"
@@ -4027,19 +4273,15 @@
                                 Margin="16"
                                 Visibility="{Binding HasNoMessages, Converter={StaticResource BoolToVis}}">
                             <StackPanel HorizontalAlignment="Center">
-                                <Border Width="48" Height="48"
-                                        CornerRadius="24"
-                                        Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                                <Border Width="56" Height="56"
+                                        CornerRadius="14"
                                         HorizontalAlignment="Center"
+                                        ClipToBounds="True"
                                         Margin="0,0,0,12">
-                                    <ui:SymbolIcon Symbol="BotSparkle24"
-                                                   FontSize="24"
-                                                   Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}"
-                                                   HorizontalAlignment="Center"
-                                                   VerticalAlignment="Center" />
+                                    <Image Source="Assets/app_logo.png" Width="56" Height="56" RenderOptions.BitmapScalingMode="HighQuality" />
                                 </Border>
-                                <TextBlock Text="StudySuit AI Assistant"
-                                           FontSize="14.5"
+                                <TextBlock Text="StudyMateAI Assistant"
+                                           FontSize="15"
                                            FontWeight="SemiBold"
                                            HorizontalAlignment="Center"
                                            Margin="0,0,0,5" />
@@ -4063,7 +4305,7 @@
                                       PanningRatio="1.0"
                                       IsManipulationEnabled="True"
                                       PreviewMouseWheel="AiChatScrollViewer_PreviewMouseWheel"
-                                      MouseWheel="AiChatScrollViewer_PreviewMouseWheel"
+                                      ScrollChanged="AiChatScrollViewer_ScrollChanged"
                                       Padding="12,10">
                         <ItemsControl x:Name="AiChatItemsControl"
                                       ItemsSource="{Binding Messages}"
@@ -4103,31 +4345,7 @@
                                             <StackPanel>
                                                 <DockPanel Margin="0,0,0,6">
                                                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                                                        <!-- Hindi / English Voice Readout Button -->
-                                                        <ui:Button Appearance="Transparent"
-                                                                   Padding="5,3"
-                                                                   Margin="0,0,2,0"
-                                                                   ToolTip="Read Response Aloud (Hindi / Voice)"
-                                                                   Command="{Binding DataContext.AiAssistant.ToggleSpeakMessageCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                   CommandParameter="{Binding}"
-                                                                   Visibility="{Binding IsSpeaking, Converter={StaticResource InverseBoolToVis}}">
-                                                            <StackPanel Orientation="Horizontal">
-                                                                <ui:SymbolIcon Symbol="Speaker224" FontSize="13.5" Foreground="#FF38BDF8" Margin="0,0,4,0" />
-                                                                <TextBlock Text="Read" FontSize="11" />
-                                                            </StackPanel>
-                                                        </ui:Button>
 
-                                                        <ui:Button Appearance="Transparent"
-                                                                   Padding="5,3"
-                                                                   Margin="0,0,2,0"
-                                                                   ToolTip="Stop Reading Aloud"
-                                                                   Command="{Binding DataContext.AiAssistant.StopSpeakingCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                                   Visibility="{Binding IsSpeaking, Converter={StaticResource BoolToVis}}">
-                                                            <StackPanel Orientation="Horizontal">
-                                                                <ui:SymbolIcon Symbol="Stop24" FontSize="13.5" Foreground="#FFF87171" Margin="0,0,4,0" />
-                                                                <TextBlock Text="Stop" FontSize="11" Foreground="#FFF87171" />
-                                                            </StackPanel>
-                                                        </ui:Button>
 
                                                         <ui:Button Appearance="Transparent"
                                                                    Padding="5,3"
@@ -4151,8 +4369,8 @@
                                                     </StackPanel>
 
                                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                        <ui:SymbolIcon Symbol="Sparkle24" FontSize="13" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" Margin="0,0,5,0" />
-                                                        <TextBlock Text="StudySuit AI" FontSize="11.5" FontWeight="SemiBold" />
+                                                        <Image Source="Assets/app_logo.png" Width="16" Height="16" Margin="0,0,6,0" VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality" />
+                                                        <TextBlock Text="StudyMateAI" FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center" />
                                                         <TextBlock Text=" • PDF" FontSize="10.5" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}"
                                                                    Visibility="{Binding UsedPdfContext, Converter={StaticResource BoolToVis}}" />
                                                         <TextBlock Text=" • Web" FontSize="10.5" Foreground="#FF38BDF8"
@@ -4163,6 +4381,7 @@
                                                 </DockPanel>
 
                                                 <controls:MarkdownMessageView MarkdownText="{Binding Content, Mode=OneWay}"
+                                                                              IsStreaming="{Binding IsStreaming}"
                                                                               IsDarkTheme="{Binding DataContext.IsDarkTheme, RelativeSource={RelativeSource AncestorType=Window}}" />
 
                                                 <!-- Clickable Web Sources -->
@@ -4206,49 +4425,162 @@
                     </ScrollViewer>
                     </Grid>
 
-                    <!-- Busy Progress & Status -->
-                    <StackPanel Grid.Row="3" Margin="12,4,12,4">
-                        <ProgressBar IsIndeterminate="True" Height="3" Margin="0,0,0,4"
-                                     Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}" />
-                        <TextBlock Text="{Binding StatusText}" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
-                    </StackPanel>
+                        <!-- Busy Progress & Status -->
+                        <StackPanel Grid.Row="2" Margin="12,4,12,4">
+                            <ProgressBar IsIndeterminate="True" Height="3" Margin="0,0,0,4"
+                                         Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}" />
+                            <TextBlock Text="{Binding StatusText}" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
 
-                    <!-- Prompt Input Composer -->
-                    <Border Grid.Row="4"
-                            Padding="12,10"
-                            BorderThickness="0,1,0,0"
-                            BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
-                        <StackPanel>
-                            <WrapPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                <ToggleButton IsChecked="{Binding UsePdfContext}"
-                                              Padding="8,4"
+                        <!-- Prompt Input Composer -->
+                        <Border Grid.Row="3"
+                                Padding="12,10"
+                                BorderThickness="0,1,0,0"
+                                BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}">
+                            <StackPanel>
+                                <WrapPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <!-- PDF Context Toggle Button -->
+                                <ToggleButton Style="{StaticResource AppleCapsuleToggleStyle}"
+                                              IsChecked="{Binding UsePdfContext, Mode=TwoWay}"
                                               Margin="0,0,6,4"
-                                              BorderThickness="1"
-                                              BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-                                              Background="Transparent"
-                                              Foreground="{DynamicResource TextFillColorPrimaryBrush}"
-                                              ToolTip="Allow the AI to read and search the open PDF when relevant">
-                                    <StackPanel Orientation="Horizontal">
-                                        <ui:SymbolIcon Symbol="DocumentText24" FontSize="13" Margin="0,0,5,0" />
-                                        <TextBlock Text="PDF Context" FontSize="11" />
+                                              ToolTip="Include PDF: When active, AI references the open PDF pages and formulas while answering.">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <ui:SymbolIcon Symbol="DocumentText24" FontSize="13" Margin="0,0,6,0">
+                                            <ui:SymbolIcon.Style>
+                                                <Style TargetType="ui:SymbolIcon">
+                                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding UsePdfContext}" Value="True">
+                                                            <Setter Property="Foreground" Value="#FFFFFF" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ui:SymbolIcon.Style>
+                                        </ui:SymbolIcon>
+                                        <TextBlock FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Text" Value="Include PDF: OFF" />
+                                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding UsePdfContext}" Value="True">
+                                                            <Setter Property="Text" Value="Include PDF: ON" />
+                                                            <Setter Property="Foreground" Value="#FFFFFF" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
                                     </StackPanel>
                                 </ToggleButton>
 
-                                <ToggleButton IsChecked="{Binding UseWebResearch}"
-                                              Padding="8,4"
+                                <!-- Web Research Toggle Button -->
+                                <ToggleButton Style="{StaticResource AppleCapsuleToggleStyle}"
+                                              IsChecked="{Binding UseWebResearch, Mode=TwoWay}"
                                               Margin="0,0,6,4"
-                                              BorderThickness="1"
-                                              BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-                                              Background="Transparent"
-                                              Foreground="{DynamicResource TextFillColorPrimaryBrush}"
-                                              ToolTip="Allow the AI to search the internet when up-to-date facts or web lookup are needed">
-                                    <StackPanel Orientation="Horizontal">
-                                        <ui:SymbolIcon Symbol="GlobeSearch24" FontSize="13" Foreground="#FF38BDF8" Margin="0,0,5,0" />
-                                        <TextBlock Text="Web Research" FontSize="11" />
+                                              ToolTip="Web Search: When active, AI queries online search for real-time facts and latest references.">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <ui:SymbolIcon Symbol="GlobeSearch24" FontSize="13" Margin="0,0,6,0">
+                                            <ui:SymbolIcon.Style>
+                                                <Style TargetType="ui:SymbolIcon">
+                                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding UseWebResearch}" Value="True">
+                                                            <Setter Property="Foreground" Value="#FFFFFF" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ui:SymbolIcon.Style>
+                                        </ui:SymbolIcon>
+                                        <TextBlock FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Text" Value="Web Search: OFF" />
+                                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding UseWebResearch}" Value="True">
+                                                            <Setter Property="Text" Value="Web Search: ON" />
+                                                            <Setter Property="Foreground" Value="#FFFFFF" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </ToggleButton>
+
+                                <!-- 3D Interactive Models Toggle Button -->
+                                <ToggleButton Style="{StaticResource AppleCapsuleToggleStyle}"
+                                              IsChecked="{Binding UseSketchfab3D, Mode=TwoWay}"
+                                              Margin="0,0,6,4"
+                                              ToolTip="3D Models: When active, AI embeds interactive Sketchfab 3D models with 360° orbit, zoom, and pan controls.">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <ui:SymbolIcon Symbol="Cube24" FontSize="13" Margin="0,0,6,0">
+                                            <ui:SymbolIcon.Style>
+                                                <Style TargetType="ui:SymbolIcon">
+                                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding UseSketchfab3D}" Value="True">
+                                                            <Setter Property="Foreground" Value="#FFFFFF" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ui:SymbolIcon.Style>
+                                        </ui:SymbolIcon>
+                                        <TextBlock FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Text" Value="3D Models: OFF" />
+                                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding UseSketchfab3D}" Value="True">
+                                                            <Setter Property="Text" Value="3D Models: ON" />
+                                                            <Setter Property="Foreground" Value="#FFFFFF" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </ToggleButton>
+
+                                <!-- Mermaid Diagrams & Charts Toggle Button -->
+                                <ToggleButton Style="{StaticResource AppleCapsuleToggleStyle}"
+                                              IsChecked="{Binding UseDiagramsAndCharts, Mode=TwoWay}"
+                                              Margin="0,0,6,4"
+                                              ToolTip="Diagrams &amp; Charts: When active, AI generates visual Mermaid diagrams, architecture flowcharts, and comparative data charts.">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <ui:SymbolIcon Symbol="BranchFork24" FontSize="13" Margin="0,0,6,0">
+                                            <ui:SymbolIcon.Style>
+                                                <Style TargetType="ui:SymbolIcon">
+                                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding UseDiagramsAndCharts}" Value="True">
+                                                            <Setter Property="Foreground" Value="#FFFFFF" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ui:SymbolIcon.Style>
+                                        </ui:SymbolIcon>
+                                        <TextBlock FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Text" Value="Diagrams: OFF" />
+                                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding UseDiagramsAndCharts}" Value="True">
+                                                            <Setter Property="Text" Value="Diagrams: ON" />
+                                                            <Setter Property="Foreground" Value="#FFFFFF" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
                                     </StackPanel>
                                 </ToggleButton>
                             </WrapPanel>
 
+                            <!-- Clean Chat Prompt Input Area (No Mic, No Speaking/Listening Bars) -->
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
@@ -4257,7 +4589,7 @@
 
                                 <ui:TextBox x:Name="AiPromptBox"
                                             Grid.Column="0"
-                                            PlaceholderText="Ask anything, search PDF, or research online... (Shift+Enter for new line)"
+                                            PlaceholderText="Ask anything, search PDF, explore 3D models, or research online... (Shift+Enter for new line)"
                                             Text="{Binding PromptText, UpdateSourceTrigger=PropertyChanged}"
                                             AcceptsReturn="True"
                                             TextWrapping="Wrap"
@@ -4291,6 +4623,7 @@
                             </Grid>
                         </StackPanel>
                     </Border>
+                    </Grid>
 
                     <!-- Chat History Drawer / Overlay (All Saved Sessions) -->
                     <Border Grid.Row="1" Grid.RowSpan="4"
@@ -4370,7 +4703,14 @@
                                                         CornerRadius="8"
                                                         Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                                                         BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
-                                                        BorderThickness="1">
+                                                        BorderThickness="1"
+                                                        Cursor="Hand"
+                                                        MouseLeftButtonUp="HistorySessionBorder_MouseLeftButtonUp">
+                                                    <Border.InputBindings>
+                                                        <MouseBinding Gesture="LeftClick"
+                                                                      Command="{Binding DataContext.AiAssistant.LoadSessionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                      CommandParameter="{Binding}" />
+                                                    </Border.InputBindings>
                                                     <DockPanel>
                                                         <!-- Delete session button -->
                                                         <ui:Button DockPanel.Dock="Right"
@@ -4386,7 +4726,8 @@
                                                         <!-- Clickable card body -->
                                                         <Button Style="{StaticResource ThemedCardButtonStyle}"
                                                                 HorizontalContentAlignment="Stretch"
-                                                                Command="{Binding DataContext.AiAssistant.SelectSessionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                Click="HistorySessionCard_Click"
+                                                                Command="{Binding DataContext.AiAssistant.LoadSessionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                 CommandParameter="{Binding}">
                                                             <Grid Margin="0,0,6,0">
                                                                 <Grid.ColumnDefinitions>
@@ -4401,19 +4742,27 @@
                                                                 </Border>
 
                                                                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                                                    <TextBlock Text="{Binding Title}"
+                                                                    <TextBlock Text="{Binding DisplayTopic}"
                                                                                FontSize="12"
                                                                                FontWeight="SemiBold"
                                                                                TextTrimming="CharacterEllipsis"
-                                                                               ToolTip="{Binding Title}" />
-                                                                    <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                                                                               ToolTip="{Binding DisplayTopic}" />
+                                                                    <StackPanel Orientation="Horizontal" Margin="0,3,0,0" VerticalAlignment="Center">
+                                                                        <ui:SymbolIcon Symbol="Clock24" FontSize="10" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" Margin="0,0,4,0" VerticalAlignment="Center" />
+                                                                        <TextBlock Text="{Binding FormattedTimeDisplay}"
+                                                                                   FontSize="10.5"
+                                                                                   FontWeight="SemiBold"
+                                                                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                                                                        <TextBlock Text=" • "
+                                                                                   FontSize="10.5"
+                                                                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
                                                                         <TextBlock Text="{Binding RelativeTimeDisplay}"
                                                                                    FontSize="10.5"
                                                                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                                                                         <TextBlock Text=" • "
                                                                                    FontSize="10.5"
                                                                                    Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
-                                                                        <TextBlock Text="{Binding MessageCount, StringFormat='{}{0} messages'}"
+                                                                        <TextBlock Text="{Binding MessageCount, StringFormat='{}{0} msgs'}"
                                                                                    FontSize="10.5"
                                                                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                                                                     </StackPanel>
@@ -4574,6 +4923,89 @@
                 </StackPanel>
             </Grid>
         </Border>
+
+        <!-- Full-Screen 3D Interactive Model Viewer Overlay (In-App) -->
+        <Grid x:Name="Model3DFullScreenOverlay"
+              Grid.Row="0"
+              Grid.RowSpan="7"
+              Panel.ZIndex="999"
+              Background="#F20A0F1D"
+              Visibility="Collapsed">
+            <Grid Margin="20,16,20,20">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- Top Header Bar -->
+                <Border Grid.Row="0"
+                        Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="10"
+                        Padding="16,10"
+                        Margin="0,0,0,12">
+                    <DockPanel>
+                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
+                            <ui:Button Appearance="Secondary"
+                                       Padding="10,6"
+                                       Margin="0,0,8,0"
+                                       Click="Model3DFullScreen_OpenBrowser_Click"
+                                       ToolTip="Open in External Browser">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Open24" FontSize="13" Margin="0,0,6,0" />
+                                    <TextBlock Text="Browser" FontSize="12" />
+                                </StackPanel>
+                            </ui:Button>
+
+                            <ui:Button Appearance="Primary"
+                                       Padding="14,6"
+                                       Click="Model3DFullScreen_Close_Click"
+                                       ToolTip="Exit Full Screen (Esc)">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Dismiss24" FontSize="14" Margin="0,0,6,0" />
+                                    <TextBlock Text="Exit Full Screen" FontWeight="SemiBold" FontSize="12.5" />
+                                </StackPanel>
+                            </ui:Button>
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <ui:SymbolIcon Symbol="Cube24" FontSize="18" Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" Margin="0,0,10,0" />
+                            <TextBlock x:Name="Model3DFullScreenTitle" Text="3D Interactive Model" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="500" />
+                            <Border Background="{DynamicResource SubtleFillColorSecondaryBrush}" CornerRadius="6" Padding="8,3" Margin="12,0,0,0" VerticalAlignment="Center">
+                                <TextBlock Text="Full Screen Interactive View" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            </Border>
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+
+                <!-- 3D Interactive WebView2 Canvas -->
+                <Border Grid.Row="1"
+                        CornerRadius="12"
+                        ClipToBounds="True"
+                        Background="#0F172A"
+                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                        BorderThickness="1">
+                    <wv2:WebView2 x:Name="Model3DFullScreenWebView"
+                                  HorizontalAlignment="Stretch"
+                                  VerticalAlignment="Stretch"
+                                  DefaultBackgroundColor="#0F172A" />
+                </Border>
+
+                <!-- Bottom Controls / Instruction Pill -->
+                <Border Grid.Row="2"
+                        Margin="0,10,0,0"
+                        Padding="16,6"
+                        HorizontalAlignment="Center"
+                        Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                        CornerRadius="20">
+                    <TextBlock Text="🖱 Drag to Rotate 360° • 🔍 Scroll to Zoom • ↔ Right-Click to Pan • Press Esc to Exit"
+                               FontSize="11.5"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                </Border>
+            </Grid>
+        </Grid>
 
         <!-- Full-Window Non-Blocking Night Light Warm Yellow Overlay -->
         <Rectangle x:Name="NightLightOverlay"
