@@ -386,16 +386,34 @@ public sealed partial class WebResearchService : IWebResearchService
             }
         }
 
-        // 2. High-speed direct web & Google Images search (returns direct image links with full metadata)
-        var list = await SearchWebImagesAsync(effectiveQuery, maxResults, cancellationToken).ConfigureAwait(false);
-        if (list.Count >= 2)
+        // 1. Educational diagrams, science figures, historical archives & maps from Wikimedia Commons (Peer-reviewed, strictly educational)
+        var list = new List<WebImageReference>();
+        try
+        {
+            var wikiImages = await SearchWikimediaImagesAsync(effectiveQuery, maxResults, cancellationToken).ConfigureAwait(false);
+            foreach (var img in wikiImages)
+            {
+                list.Add(new WebImageReference
+                {
+                    Index = list.Count + 1,
+                    Title = img.Title,
+                    ImageUrl = img.ImageUrl,
+                    SourcePageUrl = img.SourcePageUrl
+                });
+            }
+        }
+        catch { }
+
+        // If we have enough verified educational images from Wikimedia, return them directly
+        if (list.Count >= maxResults)
         {
             return list;
         }
 
-        // 3. Educational diagrams, science figures & maps from Wikimedia Commons
-        var wikiImages = await SearchWikimediaImagesAsync(effectiveQuery, maxResults - list.Count, cancellationToken).ConfigureAwait(false);
-        foreach (var img in wikiImages)
+        // 2. High-speed direct web search with strict educational & anti-entertainment relevance filtering
+        int remainingNeeded = maxResults - list.Count;
+        var webList = await SearchWebImagesAsync(effectiveQuery, remainingNeeded, cancellationToken).ConfigureAwait(false);
+        foreach (var img in webList)
         {
             if (!list.Any(i => string.Equals(i.ImageUrl, img.ImageUrl, StringComparison.OrdinalIgnoreCase)))
             {
@@ -412,6 +430,19 @@ public sealed partial class WebResearchService : IWebResearchService
         return list;
     }
 
+    private static readonly HashSet<string> StopWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "the", "and", "for", "with", "about", "what", "how", "this", "that", "from",
+        "diagram", "photo", "image", "picture", "show", "give", "explain", "draw"
+    };
+
+    private static readonly string[] ProhibitedEntertainmentWords =
+    [
+        "mad max", "fury", "trailer", "movie", "film", "hollywood", "bollywood",
+        "cinema", "box office", "imdb", "rotten tomatoes", "fandom", "wallpaper",
+        "soundtrack", "celebrity", "meme", "parody", "cosplay", "teaser"
+    ];
+
     private async Task<List<WebImageReference>> SearchWebImagesAsync(
         string query,
         int maxResults,
@@ -420,7 +451,19 @@ public sealed partial class WebResearchService : IWebResearchService
         var results = new List<WebImageReference>();
         try
         {
-            string url = $"https://www.bing.com/images/async?q={Uri.EscapeDataString(query)}&first=1&count={Math.Max(maxResults * 2, 12)}";
+            bool queryAboutMovies = query.Contains("movie", StringComparison.OrdinalIgnoreCase) ||
+                                    query.Contains("film", StringComparison.OrdinalIgnoreCase) ||
+                                    query.Contains("cinema", StringComparison.OrdinalIgnoreCase) ||
+                                    query.Contains("actor", StringComparison.OrdinalIgnoreCase) ||
+                                    query.Contains("actress", StringComparison.OrdinalIgnoreCase) ||
+                                    query.Contains("hollywood", StringComparison.OrdinalIgnoreCase) ||
+                                    query.Contains("bollywood", StringComparison.OrdinalIgnoreCase);
+
+            var queryTokens = query.Split(new[] { ' ', '-', ',', '.', ':', '/' }, StringSplitOptions.RemoveEmptyEntries)
+                                   .Where(t => t.Length >= 3 && !StopWords.Contains(t))
+                                   .ToList();
+
+            string url = $"https://www.bing.com/images/async?q={Uri.EscapeDataString(query)}&first=1&count={Math.Max(maxResults * 3, 16)}";
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
             req.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
             req.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
@@ -450,8 +493,33 @@ public sealed partial class WebResearchService : IWebResearchService
                     string title = root.TryGetProperty("t", out var t) ? t.GetString() ?? string.Empty : string.Empty;
                     string purl = root.TryGetProperty("purl", out var pu) ? pu.GetString() ?? string.Empty : string.Empty;
 
-                    // Prefer reliable CDN image: if murl is unsecure, paywalled, or from a known hotlink-blocking site
-                    // (e.g. freepik, alamy, shutterstock, pinterest), swap to Microsoft Bing CDN (turl) which never blocks.
+                    // Filter out movie/pop-culture fiction if query is not about movies
+                    if (!queryAboutMovies)
+                    {
+                        string lowerTitle = title.ToLowerInvariant();
+                        string lowerPurl = purl.ToLowerInvariant();
+                        string lowerMurl = murl.ToLowerInvariant();
+                        bool hasProhibited = ProhibitedEntertainmentWords.Any(w =>
+                            lowerTitle.Contains(w) || lowerPurl.Contains(w) || lowerMurl.Contains(w));
+                        if (hasProhibited)
+                        {
+                            continue; // Skip irrelevant entertainment/movie stills
+                        }
+
+                        // Verify topic relevance: title or URL should contain at least one meaningful token from query
+                        if (queryTokens.Count > 0)
+                        {
+                            bool hasMatchingToken = queryTokens.Any(tok =>
+                                lowerTitle.Contains(tok, StringComparison.OrdinalIgnoreCase) ||
+                                lowerPurl.Contains(tok, StringComparison.OrdinalIgnoreCase));
+                            if (!hasMatchingToken)
+                            {
+                                continue; // Discard images with zero keyword overlap
+                            }
+                        }
+                    }
+
+                    // Prefer reliable CDN image
                     string effectiveImageUrl = murl;
                     if (string.IsNullOrWhiteSpace(effectiveImageUrl) ||
                         !effectiveImageUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||

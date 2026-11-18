@@ -1827,15 +1827,15 @@ public sealed class AiChatService : IAiChatService
             $"1. Keep your tone strictly clean, academic, professional, and clear. Do NOT clutter responses with decorative emojis.\n" +
             $"2. STRICT RULE: DO NOT use emojis in headings, titles, section headers, or bullet prefixes (e.g. NEVER write '## 🕌 The Taj Mahal', '### 🏛️ Architecture', '### 📜 Context', '### 🎯 Notes', '### 🔍 Analysis', '### 💡 Conclusion'). Use clean standard Markdown headers (e.g. '## The Taj Mahal: Architecture and Context', '### Historical Context').\n" +
             $"3. At most, use 0 to 1 minimal, subtle emoji in the entire response only if strictly necessary. Default to ZERO emojis.\n\n" +
-            $"[INTERNET IMAGES & VISUAL REFERENCE INSTRUCTION (MANDATORY)]:\n" +
-            $"1. MANDATORY VISUAL IMAGE EMBEDDING ON EVERY TOPIC/CONCEPT:\n" +
-            $"   • For EVERY response explaining a monument, place, person, historical event, scientific concept, biology/anatomy, physics, chemistry, engineering, animal, geography, architecture, or academic topic, you MUST call the `search_images` tool to retrieve authentic visual references or diagrams.\n" +
-            $"   • From the returned results, pick the most relevant direct image URL and embed it directly into your response on its own line using standard Markdown:\n" +
-            $"     `![Descriptive Caption](direct_image_url)`\n" +
-            $"   • CRITICAL IMAGE SYNTAX RULE: ALWAYS include the leading exclamation mark '!' (e.g. `![Taj Mahal](url)`). DO NOT write `[Caption](url)` without '!', as omitting '!' renders as an unrendered text link instead of a picture!\n" +
-            $"   • Accompany the image with a concise, clear caption explaining the visual concept.\n" +
-            $"   • STRICT ANTI-HALLUCINATION RULE: ONLY embed real, authentic HTTPS image URLs returned by `search_images` or `web_search`. NEVER fabricate, guess, or invent fake image URLs (e.g. fake Wikimedia or image paths). Always execute `search_images` to obtain authentic working URLs.\n" +
-            $"   • Only skip calling `search_images` if the query is pure arithmetic (e.g. 'what is 2 + 2'), pure code syntax debugging with no visual aspect, or if the user explicitly requested text-only.\n\n" +
+            $"[ACADEMIC VISUAL REFERENCES & IMAGES (STRICT RELEVANCE REQUIREMENT)]:\n" +
+            $"1. EDUCATIONAL IMAGE EMBEDDING:\n" +
+            $"   • When explaining an academic concept, monument, scientific diagram, anatomical structure, or historical event that benefits from visual aid, you may call `search_images` using specific, descriptive academic search queries (e.g. 'Election Commission of India electronic voting machine EVM photo' or 'Chloroplast thylakoid diagram').\n" +
+            $"   • CRITICAL IMAGE RELEVANCE & ACCURACY RULES:\n" +
+            $"     - STRICT ZERO-TOLERANCE FOR IRRELEVANT IMAGES: ONLY embed an image if it is 100% DIRECTLY, FACTUALLY, and ACADEMICALLY relevant to the specific topic discussed.\n" +
+            $"     - NEVER embed movie posters, entertainment stills, film trailers, pop-culture memes, celebrity gossip, or unrelated commercial thumbnails (e.g. for elections or governance, NEVER embed a movie poster like Mad Max or Hollywood fiction!).\n" +
+            $"     - If the search results do not contain an authentic, high-confidence educational picture for the topic, DO NOT EMBED ANY IMAGE. Having zero images is far better than showing an irrelevant or misleading picture.\n" +
+            $"     - When embedding a verified relevant image, use standard Markdown: `![Descriptive Caption](direct_image_url)` on its own line.\n" +
+            $"     - NEVER invent fake URLs. Only use URLs returned by `search_images`.\n\n" +
             $"[VISUAL CARDS & DATA CHARTS USAGE (MANDATORY)]:\n" +
             $"1. VISUAL CARDS GRID (`cards` block):\n" +
             $"   • Whenever summarizing points, categories, definitions, features, advantages/disadvantages, or comparing topics, ALWAYS use the `cards` block instead of plain bullet walls!\n" +

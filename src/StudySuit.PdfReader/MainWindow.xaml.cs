@@ -1711,6 +1711,55 @@ public partial class MainWindow : FluentWindow
             return;
         }
 
+        if (_viewModel.ShowAiTest && _viewModel.AiTest.IsTakingTestVisible &&
+            Keyboard.FocusedElement is not System.Windows.Controls.Primitives.TextBoxBase &&
+            Keyboard.FocusedElement is not System.Windows.Controls.PasswordBox &&
+            Keyboard.FocusedElement is not Wpf.Ui.Controls.TextBox)
+        {
+            if (e.Key is Key.A or Key.D1 or Key.NumPad1)
+            {
+                e.Handled = true;
+                _viewModel.AiTest.SelectOptionCommand.Execute("0");
+                return;
+            }
+            if (e.Key is Key.B or Key.D2 or Key.NumPad2)
+            {
+                e.Handled = true;
+                _viewModel.AiTest.SelectOptionCommand.Execute("1");
+                return;
+            }
+            if (e.Key is Key.C or Key.D3 or Key.NumPad3)
+            {
+                e.Handled = true;
+                _viewModel.AiTest.SelectOptionCommand.Execute("2");
+                return;
+            }
+            if (e.Key is Key.D or Key.D4 or Key.NumPad4)
+            {
+                e.Handled = true;
+                _viewModel.AiTest.SelectOptionCommand.Execute("3");
+                return;
+            }
+            if (e.Key == Key.Left)
+            {
+                e.Handled = true;
+                if (_viewModel.AiTest.CanGoPrevious) _viewModel.AiTest.PreviousQuestionCommand.Execute(null);
+                return;
+            }
+            if (e.Key == Key.Right)
+            {
+                e.Handled = true;
+                if (_viewModel.AiTest.CanGoNext) _viewModel.AiTest.NextQuestionCommand.Execute(null);
+                return;
+            }
+            if (e.Key == Key.F)
+            {
+                e.Handled = true;
+                _viewModel.AiTest.ToggleFlagCurrentQuestionCommand.Execute(null);
+                return;
+            }
+        }
+
         bool ctrl = (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control;
         bool inReader = _viewModel.ShowDocumentReader && _wiredTab is not null;
 

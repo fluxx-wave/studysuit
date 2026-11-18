@@ -551,11 +551,31 @@ public static partial class MarkdownFlowRenderer
 
         try
         {
-            byte[] bytes = System.Text.Encoding.UTF8.GetBytes(cleanCode);
-            string base64 = Convert.ToBase64String(bytes);
+            // Detect diagram type for descriptive header badge
+            string firstLine = cleanCode.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
+            string typeBadge = "Flowchart";
+            if (firstLine.StartsWith("sequence", StringComparison.OrdinalIgnoreCase)) typeBadge = "Sequence Diagram";
+            else if (firstLine.StartsWith("class", StringComparison.OrdinalIgnoreCase)) typeBadge = "Class Diagram";
+            else if (firstLine.StartsWith("state", StringComparison.OrdinalIgnoreCase)) typeBadge = "State Diagram";
+            else if (firstLine.StartsWith("erDiagram", StringComparison.OrdinalIgnoreCase)) typeBadge = "ER Diagram";
+            else if (firstLine.StartsWith("gantt", StringComparison.OrdinalIgnoreCase)) typeBadge = "Gantt Chart";
+            else if (firstLine.StartsWith("gitGraph", StringComparison.OrdinalIgnoreCase)) typeBadge = "Git Graph";
+            else if (firstLine.StartsWith("mindmap", StringComparison.OrdinalIgnoreCase)) typeBadge = "Mindmap";
+            else if (firstLine.StartsWith("pie", StringComparison.OrdinalIgnoreCase)) typeBadge = "Pie Chart";
 
-            string bgParam = isDarkTheme ? "?bgColor=!0f172a" : "?bgColor=!ffffff";
-            string imageUrl = $"https://mermaid.ink/img/{base64}{bgParam}";
+            // mermaid.ink requires JSON payload: { "code": cleanCode, "mermaid": { "theme": "dark" | "default" } }
+            var payloadObj = new
+            {
+                code = cleanCode,
+                mermaid = new
+                {
+                    theme = isDarkTheme ? "dark" : "default"
+                }
+            };
+            string jsonPayload = System.Text.Json.JsonSerializer.Serialize(payloadObj);
+            byte[] bytes = System.Text.Encoding.UTF8.GetBytes(jsonPayload);
+            string base64 = Convert.ToBase64String(bytes);
+            string imageUrl = $"https://mermaid.ink/img/{base64}";
 
             var outerBorder = new Border
             {
@@ -564,13 +584,39 @@ public static partial class MarkdownFlowRenderer
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(12),
                 Margin = new Thickness(0, 8, 0, 10),
-                Padding = new Thickness(12)
+                Padding = new Thickness(14)
             };
 
             var stack = new StackPanel();
 
-            var headerDock = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+            // Header toolbar
+            var headerDock = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
 
+            var actionsStack = new StackPanel { Orientation = Orientation.Horizontal };
+            DockPanel.SetDock(actionsStack, Dock.Right);
+
+            // Toggle Code / Diagram button
+            var toggleCodeBtn = new Button
+            {
+                Content = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Children =
+                    {
+                        new Wpf.Ui.Controls.SymbolIcon { Symbol = Wpf.Ui.Controls.SymbolRegular.Code24, FontSize = 12, Margin = new Thickness(0,0,4,0) },
+                        new TextBlock { Text = "Code", FontSize = 11 }
+                    }
+                },
+                Padding = new Thickness(7, 3, 7, 3),
+                ToolTip = "Toggle Diagram / Mermaid Code",
+                Background = Brushes.Transparent,
+                BorderBrush = palette.BorderBrush,
+                BorderThickness = new Thickness(1),
+                Cursor = Cursors.Hand,
+                Margin = new Thickness(0, 0, 6, 0)
+            };
+
+            // Copy button
             var copyBtn = new Button
             {
                 Content = new Wpf.Ui.Controls.SymbolIcon { Symbol = Wpf.Ui.Controls.SymbolRegular.Copy24, FontSize = 12 },
@@ -584,14 +630,17 @@ public static partial class MarkdownFlowRenderer
             {
                 try { Clipboard.SetText(cleanCode); } catch { }
             };
-            DockPanel.SetDock(copyBtn, Dock.Right);
-            headerDock.Children.Add(copyBtn);
 
-            var titleStack = new StackPanel { Orientation = Orientation.Horizontal };
+            actionsStack.Children.Add(toggleCodeBtn);
+            actionsStack.Children.Add(copyBtn);
+            headerDock.Children.Add(actionsStack);
+
+            // Left title stack
+            var titleStack = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
             titleStack.Children.Add(new Wpf.Ui.Controls.SymbolIcon
             {
                 Symbol = Wpf.Ui.Controls.SymbolRegular.BranchFork24,
-                FontSize = 14,
+                FontSize = 15,
                 Foreground = new SolidColorBrush(Color.FromRgb(56, 189, 248)),
                 Margin = new Thickness(0, 0, 6, 0),
                 VerticalAlignment = VerticalAlignment.Center
@@ -599,38 +648,163 @@ public static partial class MarkdownFlowRenderer
             titleStack.Children.Add(new TextBlock
             {
                 Text = "Mermaid Diagram",
-                FontSize = 12,
+                FontSize = 12.5,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = palette.TextBrush,
                 VerticalAlignment = VerticalAlignment.Center
             });
+
+            // Type badge
+            var typeBadgeBorder = new Border
+            {
+                Background = isDarkTheme ? new SolidColorBrush(Color.FromArgb(40, 56, 189, 248)) : new SolidColorBrush(Color.FromArgb(25, 14, 165, 233)),
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(6, 1, 6, 1),
+                Margin = new Thickness(8, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = new TextBlock
+                {
+                    Text = typeBadge,
+                    FontSize = 10.5,
+                    FontWeight = FontWeights.Medium,
+                    Foreground = new SolidColorBrush(Color.FromRgb(56, 189, 248))
+                }
+            };
+            titleStack.Children.Add(typeBadgeBorder);
+
             headerDock.Children.Add(titleStack);
             stack.Children.Add(headerDock);
 
+            // Image display container
             var imgBorder = new Border
             {
                 CornerRadius = new CornerRadius(8),
-                Background = isDarkTheme ? new SolidColorBrush(Color.FromArgb(40, 15, 23, 42)) : new SolidColorBrush(Color.FromArgb(40, 241, 245, 249)),
-                Padding = new Thickness(8),
-                ClipToBounds = true
+                Background = isDarkTheme ? new SolidColorBrush(Color.FromArgb(50, 15, 23, 42)) : new SolidColorBrush(Color.FromArgb(50, 241, 245, 249)),
+                BorderBrush = palette.BorderBrush,
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(12),
+                ClipToBounds = true,
+                Visibility = Visibility.Collapsed
             };
 
             var img = new Image
             {
-                MaxWidth = 580,
+                MaxWidth = 620,
                 Stretch = Stretch.Uniform,
                 HorizontalAlignment = HorizontalAlignment.Center
             };
-
-            var bi = new BitmapImage();
-            bi.BeginInit();
-            bi.UriSource = new Uri(imageUrl);
-            bi.CacheOption = BitmapCacheOption.OnLoad;
-            bi.EndInit();
-            img.Source = bi;
-
+            RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.HighQuality);
             imgBorder.Child = img;
+
+            // Loading placeholder
+            var loadingBorder = new Border
+            {
+                Padding = new Thickness(24, 18, 24, 18),
+                HorizontalAlignment = HorizontalAlignment.Center
+            };
+            var loadingStack = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
+            loadingStack.Children.Add(new Wpf.Ui.Controls.ProgressRing { IsIndeterminate = true, Width = 18, Height = 18, Margin = new Thickness(0, 0, 10, 0) });
+            loadingStack.Children.Add(new TextBlock
+            {
+                Text = "Rendering Mermaid visual diagram...",
+                FontSize = 12,
+                Foreground = palette.SecondaryTextBrush,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+            loadingBorder.Child = loadingStack;
+
+            // Code display fallback/toggle container
+            var codeBorder = new Border
+            {
+                CornerRadius = new CornerRadius(8),
+                Background = palette.CodeBgBrush,
+                BorderBrush = palette.BorderBrush,
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(10),
+                Visibility = Visibility.Collapsed
+            };
+            var codeText = new TextBox
+            {
+                Text = cleanCode,
+                IsReadOnly = true,
+                TextWrapping = TextWrapping.Wrap,
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Foreground = palette.TextBrush,
+                FontFamily = new FontFamily("Consolas, Cascadia Code, monospace"),
+                FontSize = 11.5,
+                MaxHeight = 280,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+            };
+            codeBorder.Child = codeText;
+
+            // Toggle button behavior
+            bool showingCode = false;
+            toggleCodeBtn.Click += (_, _) =>
+            {
+                showingCode = !showingCode;
+                if (showingCode)
+                {
+                    imgBorder.Visibility = Visibility.Collapsed;
+                    loadingBorder.Visibility = Visibility.Collapsed;
+                    codeBorder.Visibility = Visibility.Visible;
+                    ((TextBlock)((StackPanel)toggleCodeBtn.Content).Children[1]).Text = "Diagram";
+                }
+                else
+                {
+                    codeBorder.Visibility = Visibility.Collapsed;
+                    if (img.Source != null)
+                    {
+                        imgBorder.Visibility = Visibility.Visible;
+                        loadingBorder.Visibility = Visibility.Collapsed;
+                    }
+                    else
+                    {
+                        loadingBorder.Visibility = Visibility.Visible;
+                    }
+                    ((TextBlock)((StackPanel)toggleCodeBtn.Content).Children[1]).Text = "Code";
+                }
+            };
+
+            stack.Children.Add(loadingBorder);
             stack.Children.Add(imgBorder);
+            stack.Children.Add(codeBorder);
+
+            // Asynchronously fetch diagram image
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    byte[]? imgBytes = await TryFetchImageBytesAsync(imageUrl).ConfigureAwait(false);
+                    if (imgBytes != null && imgBytes.Length > 0)
+                    {
+                        var bmp = LoadBitmapFromBytes(imgBytes);
+                        await outerBorder.Dispatcher.InvokeAsync(() =>
+                        {
+                            img.Source = bmp;
+                            loadingBorder.Visibility = Visibility.Collapsed;
+                            if (!showingCode)
+                            {
+                                imgBorder.Visibility = Visibility.Visible;
+                            }
+                        });
+                        return;
+                    }
+                }
+                catch { }
+
+                // Fallback: if network fails or offline, display the code block directly
+                await outerBorder.Dispatcher.InvokeAsync(() =>
+                {
+                    loadingBorder.Visibility = Visibility.Collapsed;
+                    if (!showingCode)
+                    {
+                        codeBorder.Visibility = Visibility.Visible;
+                        showingCode = true;
+                        ((TextBlock)((StackPanel)toggleCodeBtn.Content).Children[1]).Text = "Diagram";
+                    }
+                });
+            });
 
             outerBorder.Child = stack;
             return new BlockUIContainer(outerBorder);

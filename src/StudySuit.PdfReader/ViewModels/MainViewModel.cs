@@ -45,6 +45,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public NewsFeedViewModel NewsFeed { get; }
     public AiAssistantViewModel AiAssistant { get; }
     public NcertLibraryViewModel Library { get; }
+    public AiTestViewModel AiTest { get; }
 
     public ObservableCollection<DocumentTabViewModel> Tabs { get; } = [];
     public ObservableCollection<RecentFileItem> RecentFiles { get; } = [];
@@ -72,6 +73,9 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private bool _isLibraryActive;
+
+    [ObservableProperty]
+    private bool _isTestActive;
 
     [ObservableProperty]
     private bool _isSpeakingCurrentPage;
@@ -150,11 +154,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
 
     public bool HasOpenDocument => SelectedTab is not null;
     public bool HasAnyTabs => Tabs.Count > 0;
-    public bool ShowHomeDashboard => !IsNotesActive && !IsFeedActive && !IsLibraryActive && (IsHomeActive || SelectedTab is null);
+    public bool ShowHomeDashboard => !IsNotesActive && !IsFeedActive && !IsLibraryActive && !IsTestActive && (IsHomeActive || SelectedTab is null);
     public bool ShowNotesStudio => IsNotesActive;
     public bool ShowNewsFeed => IsFeedActive;
     public bool ShowNcertLibrary => IsLibraryActive;
-    public bool ShowDocumentReader => !IsHomeActive && !IsNotesActive && !IsFeedActive && !IsLibraryActive && SelectedTab is not null;
+    public bool ShowAiTest => IsTestActive;
+    public bool ShowDocumentReader => !IsHomeActive && !IsNotesActive && !IsFeedActive && !IsLibraryActive && !IsTestActive && SelectedTab is not null;
     public double NightLightOverlayOpacity => IsNightLightEnabled ? Math.Clamp(NightLightLevel / 100.0, 0.0, 1.0) * 0.52 : 0.0;
     public bool HasRecentFiles => RecentFiles.Count > 0;
     public bool HasPinnedFiles => PinnedFiles.Count > 0;
@@ -272,6 +277,45 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             await OpenFileAsync(path);
         };
 
+        var aiSettings = aiSettingsService ?? new AiSettingsService();
+        var webResearch = webResearchService ?? new WebResearchService();
+        var testService = new AiTestService(AiChatService, aiSettings, webResearch);
+
+        Func<string, Task<string?>> extractPdfFromFile = async filePath =>
+        {
+            if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath)) return null;
+            try
+            {
+                var docInfo = await _pdfService.OpenDocumentAsync(filePath);
+                var sb = new System.Text.StringBuilder();
+                sb.AppendLine($"Document: {docInfo.FileName} ({docInfo.PageCount} total pages)");
+                int sampleCount = Math.Min(docInfo.PageCount, 12);
+                for (int p = 1; p <= sampleCount; p++)
+                {
+                    string pText = await _pdfService.GetPageTextAsync(filePath, p);
+                    if (!string.IsNullOrWhiteSpace(pText))
+                    {
+                        sb.AppendLine($"\n[Page {p}]:");
+                        sb.AppendLine(pText.Trim());
+                        if (sb.Length > 12000) break;
+                    }
+                }
+                return sb.ToString();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[AiTest] Error extracting PDF text: {ex.Message}");
+                return null;
+            }
+        };
+
+        AiTest = new AiTestViewModel(
+            testService,
+            GetActivePdfContextForAiAsync,
+            extractPdfFromFile,
+            () => Library.AllBooks.Where(b => b.IsDownloaded).ToList(),
+            () => (SelectedTab != null, SelectedTab?.DocumentInfo.FileName));
+
         _userState = _recentFilesService.Load();
         _plannerState = _studyPlannerService.Load();
         _isDarkTheme = _userState.IsDarkTheme;
@@ -366,6 +410,18 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         if (value)
         {
             SetActiveWorkspace(library: true);
+        }
+        else
+        {
+            NotifyWorkspaceVisibilityProperties();
+        }
+    }
+
+    partial void OnIsTestActiveChanged(bool value)
+    {
+        if (value)
+        {
+            SetActiveWorkspace(test: true);
         }
         else
         {
@@ -672,13 +728,14 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     }
 
     // Navigation & PDF Commands
-    public void SetActiveWorkspace(bool home = false, bool notes = false, bool feed = false, bool library = false)
+    public void SetActiveWorkspace(bool home = false, bool notes = false, bool feed = false, bool library = false, bool test = false)
     {
 #pragma warning disable MVVMTK0034
         _isHomeActive = home;
         _isNotesActive = notes;
         _isFeedActive = feed;
         _isLibraryActive = library;
+        _isTestActive = test;
 #pragma warning restore MVVMTK0034
 
         if (home)
@@ -709,6 +766,13 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
             GlobalStatusText = "NCERT Library • Browse, download and read official Class 6–12 textbooks";
             _ = Library.RefreshStatesAsync();
         }
+        else if (test)
+        {
+            IsPropertiesOpen = false;
+            IsSearchBarVisible = false;
+            GlobalStatusText = "AI Test Studio • Interactive tests with web research, live timer & evaluation report";
+            _ = AiTest.LoadSavedTestsAsync();
+        }
         else if (SelectedTab is not null)
         {
             GlobalStatusText = $"{SelectedTab.DocumentInfo.FileName} • {SelectedTab.PageCount} pages • {SelectedTab.FileSizeDisplay}";
@@ -718,6 +782,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(IsNotesActive));
         OnPropertyChanged(nameof(IsFeedActive));
         OnPropertyChanged(nameof(IsLibraryActive));
+        OnPropertyChanged(nameof(IsTestActive));
 
         NotifyWorkspaceVisibilityProperties();
     }
@@ -744,6 +809,12 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
     public void ShowLibrary()
     {
         SetActiveWorkspace(library: true);
+    }
+
+    [RelayCommand]
+    public void ShowTest()
+    {
+        SetActiveWorkspace(test: true);
     }
 
     [RelayCommand]
@@ -1397,6 +1468,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(ShowNotesStudio));
         OnPropertyChanged(nameof(ShowNewsFeed));
         OnPropertyChanged(nameof(ShowNcertLibrary));
+        OnPropertyChanged(nameof(ShowAiTest));
         OnPropertyChanged(nameof(ShowDocumentReader));
         AiAssistant?.UpdatePdfContextStatus(ShowDocumentReader && SelectedTab is not null);
     }
@@ -1423,6 +1495,7 @@ public sealed partial class MainViewModel : ObservableObject, IDisposable
         _reminderTimer.Stop();
         NewsFeed.Dispose();
         AiAssistant.Dispose();
+        AiTest.BackToDashboard();
         _voiceReadoutService.Dispose();
         _llamaAutoSetupService.Dispose();
         foreach (var tab in Tabs)

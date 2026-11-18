@@ -622,9 +622,9 @@ public sealed class PdfReaderTests : IDisposable
 
         var llamaCppBlankUrl = new AiAssistantSettings { Provider = AiProviderKind.LlamaCppLocal, BaseUrl = "", ModelName = "local-model" };
         Assert.Equal("OpenAI compatible reply", await chatService.SendChatAsync(llamaCppBlankUrl, [], "Hi", null, []));
-        Assert.Equal("http://localhost:8080/v1/chat/completions", lastUrl);
+        Assert.Equal("http://localhost:9931/v1/chat/completions", lastUrl);
 
-        Assert.Equal("http://localhost:8080/v1", AiChatService.NormalizeBaseUrl("http://localhost:8080", AiProviderKind.LlamaCppLocal));
+        Assert.Equal("http://localhost:9931/v1", AiChatService.NormalizeBaseUrl("http://localhost:9931", AiProviderKind.LlamaCppLocal));
         Assert.Equal("http://localhost:11434", AiChatService.NormalizeBaseUrl("http://localhost:11434/v1", AiProviderKind.OllamaLocal));
     }
 
@@ -1161,7 +1161,7 @@ public sealed class PdfReaderTests : IDisposable
         aiVm.UpdateSettings(new AiAssistantSettings
         {
             Provider = AiProviderKind.LlamaCppLocal,
-            BaseUrl = "http://localhost:8080/v1",
+            BaseUrl = "http://localhost:9931/v1",
             ModelName = "ggml-org/Ministral-3-8B-Instruct-2512-GGUF:Q8_0",
             UseInternetByDefault = true
         });
@@ -1688,6 +1688,163 @@ public sealed class PdfReaderTests : IDisposable
     }
 
     [Fact]
+    public async Task AiChatHistoryService_ExcludesDummyAndFailedSessions_AndPurgesThemFromDisk()
+    {
+        string historyDir = Path.Combine(_tempDir, "purge_dummy_hist");
+        Directory.CreateDirectory(historyDir);
+
+        // 1. Create a dummy/failed session file manually on disk
+        string dummyId = Guid.NewGuid().ToString("N");
+        string dummyFile = Path.Combine(historyDir, $"{dummyId}.json");
+        string dummyJson = """
+        {
+          "Id": "dummy123",
+          "Title": "Explain photosynthesis",
+          "CreatedAtUtc": "2026-11-15T07:22:59Z",
+          "LastUpdatedAtUtc": "2026-11-15T07:22:59Z",
+          "Messages": [
+            { "Role": "user", "Content": "Explain photosynthesis", "IsUser": true },
+            { "Role": "assistant", "Content": "Could not reach Local LLM", "IsError": true }
+          ]
+        }
+        """;
+        await File.WriteAllTextAsync(dummyFile, dummyJson);
+
+        // 2. Create a real session
+        var historyService = new AiChatHistoryService(historyDir);
+        var realSession = new AiChatSession
+        {
+            Title = "Real Study Session",
+            FirstSearchedTopic = "Thermodynamics principles"
+        };
+        realSession.Messages.Add(new AiChatMessage { Role = "user", Content = "Thermodynamics principles" });
+        realSession.Messages.Add(new AiChatMessage { Role = "assistant", Content = "Energy cannot be created or destroyed." });
+        await historyService.SaveSessionAsync(realSession);
+
+        // 3. Load sessions
+        var loaded = await historyService.LoadSessionsAsync();
+
+        // 4. Assert only the real session is loaded
+        Assert.Single(loaded);
+        Assert.Equal(realSession.Id, loaded[0].Id);
+        Assert.Equal("Thermodynamics principles", loaded[0].DisplayTopic);
+
+        // 5. Assert the dummy file was purged from disk
+        Assert.False(File.Exists(dummyFile));
+    }
+
+    [Fact]
+    public void AiChatSession_FirstSearchedTopicAndFormattedTime_WorkProperly()
+    {
+        // 1. Circle to Search topic extraction
+        var circleMessages = new List<AiChatMessage>
+        {
+            new() { Role = "user", Content = "[Circled on Page 16 of 'Chemistry']:\n\"Explain the following terms with one example each. (a) Corrosion (b) Rancidity\"\n\nExplain this." },
+            new() { Role = "assistant", Content = "Corrosion is..." }
+        };
+        string circleTopic = AiChatSession.ExtractFirstSearchedTopic(circleMessages);
+        Assert.Contains("Corrosion (b) Rancidity", circleTopic);
+        Assert.Contains("p.16", circleTopic);
+
+        // 2. Normal prompt topic extraction
+        var regularMessages = new List<AiChatMessage>
+        {
+            new() { Role = "user", Content = "What is Newton's second law of motion?" },
+            new() { Role = "assistant", Content = "F = ma..." }
+        };
+        string regularTopic = AiChatSession.ExtractFirstSearchedTopic(regularMessages);
+        Assert.Equal("What is Newton's second law of motion?", regularTopic);
+
+        // 3. Formatted time check
+        var session = new AiChatSession
+        {
+            LastUpdatedAtUtc = DateTime.UtcNow,
+            FirstSearchedTopic = regularTopic
+        };
+        Assert.Equal(regularTopic, session.DisplayTopic);
+        Assert.StartsWith("Today,", session.FormattedTimeDisplay);
+    }
+
+    [Fact]
+    public async Task AiToolHost_SearchImages_ReturnsFormattedMarkdownAndImageReferences()
+    {
+        var sampleImages = new List<WebImageReference>
+        {
+            new()
+            {
+                Index = 1,
+                Title = "Photosynthesis Light Reaction Diagram",
+                ImageUrl = "https://cdn.example.com/photosynthesis.png",
+                SourcePageUrl = "https://example.com/biology"
+            }
+        };
+
+        var webService = new StubWebResearchService([], sampleImages);
+        var settingsService = new AiSettingsService(Path.Combine(_tempDir, "img_test_settings.json"));
+        var settings = new AiAssistantSettings { Provider = AiProviderKind.OpenAi, ApiKey = "fake-key" };
+        settingsService.Save(settings);
+
+        string toolCallResponse = """
+        {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": null,
+                        "tool_calls": [
+                            {
+                                "id": "call_img_1",
+                                "type": "function",
+                                "function": {
+                                    "name": "search_images",
+                                    "arguments": "{\"query\":\"photosynthesis diagram\"}"
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+        """;
+
+        string secondTurnResponse = """
+        {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "Here is the diagram:\n\n![Photosynthesis Light Reaction Diagram](https://cdn.example.com/photosynthesis.png)\n\nThis shows the light reactions."
+                    }
+                }
+            ]
+        }
+        """;
+
+        int callCount = 0;
+        var handler = new StubHttpMessageHandler(req =>
+        {
+            callCount++;
+            return JsonResp(callCount == 1 ? toolCallResponse : secondTurnResponse);
+        });
+
+        var chatService = new AiChatService(new HttpClient(handler));
+        using var aiVm = new AiAssistantViewModel(
+            settingsService,
+            chatService,
+            webService,
+            chatHistoryService: new AiChatHistoryService(Path.Combine(_tempDir, "hist_img")));
+
+        aiVm.PromptText = "Show me a photosynthesis diagram";
+        await aiVm.SendMessageAsync();
+
+        Assert.Equal(2, aiVm.Messages.Count);
+        var asstMsg = aiVm.Messages[1];
+        Assert.Contains("![Photosynthesis Light Reaction Diagram](https://cdn.example.com/photosynthesis.png)", asstMsg.Content);
+        Assert.Single(asstMsg.Images);
+        Assert.Equal("https://cdn.example.com/photosynthesis.png", asstMsg.Images[0].ImageUrl);
+    }
+
+    [Fact]
     public void AiChatService_NormalizeConversationTurns_PreservesAllTurnsBeyondOldLimit()
     {
         var history = new List<AiChatMessage>();
@@ -1897,6 +2054,12 @@ public sealed class PdfReaderTests : IDisposable
 
         public IReadOnlyList<string> GetInstalledWindowsVoices() => ["Microsoft David", "Microsoft Zira"];
 
+        public Task PlayAudioBytesAsync(byte[] audioBytes, string format = "wav", double speed = 1.0, CancellationToken cancellationToken = default)
+        {
+            LastSpeed = speed;
+            return Task.CompletedTask;
+        }
+
         public void Stop()
         {
             StopCount++;
@@ -1970,14 +2133,23 @@ public sealed class PdfReaderTests : IDisposable
             _responder(request);
     }
 
-    private sealed class StubWebResearchService(IReadOnlyList<WebSourceReference> sources) : IWebResearchService
+    private sealed class StubWebResearchService(
+        IReadOnlyList<WebSourceReference> sources,
+        IReadOnlyList<WebImageReference>? images = null) : IWebResearchService
     {
         public int CallCount { get; private set; }
+        public int ImageCallCount { get; private set; }
 
         public Task<IReadOnlyList<WebSourceReference>> SearchAsync(string query, AiAssistantSettings settings, CancellationToken cancellationToken = default)
         {
             CallCount++;
             return Task.FromResult(sources);
+        }
+
+        public Task<IReadOnlyList<WebImageReference>> SearchImagesAsync(string query, AiAssistantSettings settings, CancellationToken cancellationToken = default)
+        {
+            ImageCallCount++;
+            return Task.FromResult<IReadOnlyList<WebImageReference>>(images ?? []);
         }
     }
 
@@ -2526,7 +2698,11 @@ public sealed class PdfReaderTests : IDisposable
         var chatService = new AiChatService(new HttpClient(new StubHttpMessageHandler(_ => JsonResp("{}"))));
         var webService = new StubWebResearchService([]);
 
-        using var aiVm = new AiAssistantViewModel(settingsService, chatService, webService);
+        using var aiVm = new AiAssistantViewModel(
+            settingsService,
+            chatService,
+            webService,
+            chatHistoryService: new AiChatHistoryService(Path.Combine(_tempDir, "hist_clean")));
 
         // Verify initial state has 0 messages (dummy message removed)
         Assert.Empty(aiVm.Messages);
@@ -2550,7 +2726,11 @@ public sealed class PdfReaderTests : IDisposable
         var chatService = new AiChatService(new HttpClient(new StubHttpMessageHandler(_ => JsonResp("{}"))));
         var webService = new StubWebResearchService([]);
 
-        using var aiVm = new AiAssistantViewModel(settingsService, chatService, webService);
+        using var aiVm = new AiAssistantViewModel(
+            settingsService,
+            chatService,
+            webService,
+            chatHistoryService: new AiChatHistoryService(Path.Combine(_tempDir, "hist_no_model")));
         aiVm.Settings.ModelName = ""; // user has not configured a model
         aiVm.PromptText = "Hello!";
         await aiVm.SendMessageAsync();
@@ -2580,7 +2760,11 @@ public sealed class PdfReaderTests : IDisposable
         var mockFailingService = new FailingLocalChatService();
         var webService = new StubWebResearchService([]);
 
-        using var aiVm = new AiAssistantViewModel(settingsService, mockFailingService, webService);
+        using var aiVm = new AiAssistantViewModel(
+            settingsService,
+            mockFailingService,
+            webService,
+            chatHistoryService: new AiChatHistoryService(Path.Combine(_tempDir, "hist_offline")));
         aiVm.PromptText = "Explain photosynthesis";
         await aiVm.SendMessageAsync();
 
@@ -2596,7 +2780,7 @@ public sealed class PdfReaderTests : IDisposable
         public Task<string> SendChatAsync(AiAssistantSettings settings, IReadOnlyList<AiChatMessage> history, string userPrompt, string? pdfContext, IReadOnlyList<WebSourceReference> webSources, Action<string>? onStreamDelta = null, CancellationToken cancellationToken = default)
             => throw new HttpRequestException("No connection could be made because the target machine actively refused it.");
 
-        public Task<string> SendChatWithToolsAsync(AiAssistantSettings settings, IReadOnlyList<AiChatMessage> history, string userPrompt, string? pdfContext, AiToolHost? toolHost, Action<string>? onStreamDelta = null, CancellationToken cancellationToken = default)
+        public Task<string> SendChatWithToolsAsync(AiAssistantSettings settings, IReadOnlyList<AiChatMessage> history, string userPrompt, string? pdfContext, AiToolHost? toolHost, Action<string>? onStreamDelta = null, byte[]? inputAudioBytes = null, string inputAudioFormat = "wav", CancellationToken cancellationToken = default)
             => throw new HttpRequestException("No connection could be made because the target machine actively refused it.");
 
         public Task<IReadOnlyList<string>> FetchAvailableModelsAsync(AiAssistantSettings settings, CancellationToken cancellationToken = default)
@@ -3137,6 +3321,138 @@ public sealed class PdfReaderTests : IDisposable
     }
 
     [Fact]
+    public void MarkdownFlowRenderer_RenderCards_FromUserChat()
+    {
+        Exception? threadEx = null;
+        bool isCardBlock = false;
+        string? failureReason = null;
+        var sta = new Thread(() =>
+        {
+            try
+            {
+                string jsonFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "StudySuit.PdfReader", "chat_history", "2086e14dc7c841169779122fb1d33d08.json");
+                if (File.Exists(jsonFile))
+                {
+                    using var docJson = JsonDocument.Parse(File.ReadAllText(jsonFile));
+                    string content = docJson.RootElement.GetProperty("Messages")[1].GetProperty("Content").GetString()!;
+
+                    var doc = MarkdownFlowRenderer.RenderToFlowDocument(content, false);
+                    var codeContainers = doc.Blocks.OfType<BlockUIContainer>()
+                        .Where(bui => bui.Child is Border b && b.Child is StackPanel s && s.Children.OfType<TextBlock>().Any(tb => tb.Text == "CARDS"))
+                        .ToList();
+                    if (codeContainers.Count > 0)
+                    {
+                        failureReason = "Found BlockUIContainer with CARDS fallback in rendered full message!";
+                    }
+                    else
+                    {
+                        isCardBlock = true;
+                    }
+                }
+                else
+                {
+                    isCardBlock = true;
+                }
+
+                // Also test malformed cards with extra closing braces, smart quotes, and unescaped newlines:
+                string malformedCards = "```cards\n{“title”: “Malformed Cards Test”, “columns”: 2, “cards”: [{“title”: “Card 1”, “badge”: “Important”, “items”: [“Item 1”, “Item 2”,]}, {“title”: “Card 2”, “badge”: “Note”, “items”: [“Item 3”, “Item 4”]}]}}\n```";
+                var malformedDoc = MarkdownFlowRenderer.RenderToFlowDocument(malformedCards, false);
+                var fallbackContainers = malformedDoc.Blocks.OfType<BlockUIContainer>()
+                    .Where(bui => bui.Child is Border b && b.Child is StackPanel s && s.Children.OfType<TextBlock>().Any(tb => tb.Text == "CARDS"))
+                    .ToList();
+                if (fallbackContainers.Count > 0)
+                {
+                    failureReason = "Malformed cards with extra braces and smart quotes fell back to CARDS code block!";
+                }
+            }
+            catch (Exception ex)
+            {
+                threadEx = ex;
+            }
+        });
+        sta.SetApartmentState(ApartmentState.STA);
+        sta.Start();
+        sta.Join();
+
+        Assert.Null(threadEx);
+        Assert.Null(failureReason);
+        Assert.True(isCardBlock);
+    }
+
+    [Fact]
+    public async Task AiAssistantViewModel_UsePdfContextToggle_OmitsPdfContextWhenFalse()
+    {
+        var settingsService = new AiSettingsService(Path.Combine(_tempDir, "ai_toggle_settings.json"));
+        settingsService.Save(new AiAssistantSettings { Provider = AiProviderKind.OpenAi, ApiKey = "fake-key" });
+
+        var handler = new StubHttpMessageHandler(req =>
+        {
+            string sse = "data: {\"choices\":[{\"delta\":{\"content\":\"General knowledge answer.\"}}]}\n\ndata: [DONE]\n\n";
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(sse, Encoding.UTF8, "text/event-stream")
+            };
+        });
+
+        var chatService = new AiChatService(new HttpClient(handler));
+        using var aiVm = new AiAssistantViewModel(
+            settingsService,
+            chatService,
+            new StubWebResearchService([]),
+            chatHistoryService: new AiChatHistoryService(Path.Combine(_tempDir, "hist_toggle")))
+        {
+            UsePdfContext = false,
+            GetActivePdfContextAsync = () => Task.FromResult<string?>("PDF Page 10 Content")
+        };
+
+        aiVm.PromptText = "Hello";
+        await aiVm.SendMessageAsync();
+
+        Assert.Equal(2, aiVm.Messages.Count);
+        Assert.False(aiVm.Messages[1].UsedPdfContext);
+    }
+
+    [Fact]
+    public async Task TestImageDownload_Freepik()
+    {
+        string url = "https://img.freepik.com/premium-photo/portrait-dog-sitting-field_1048944-15320681.jpg";
+        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        // Ask for jpeg / png:
+        client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "image/jpeg,image/png,image/gif,*/*;q=0.5");
+        
+        using var resp = await client.GetAsync(url);
+        byte[] bytes = await resp.Content.ReadAsByteArrayAsync();
+        using var ms = new MemoryStream(bytes);
+        var bmp = new BitmapImage();
+        bmp.BeginInit();
+        bmp.CacheOption = BitmapCacheOption.OnLoad;
+        bmp.StreamSource = ms;
+        bmp.EndInit();
+        bmp.Freeze();
+        Assert.True(bmp.PixelWidth > 0);
+        Assert.True(bmp.PixelHeight > 0);
+    }
+
+    [Fact]
+    public async Task TestImageSearch_WebResearchService_ReturnsValidUrls()
+    {
+        var service = new WebResearchService();
+        var settings = new AiAssistantSettings();
+        var results = await service.SearchImagesAsync("Taj Mahal", settings);
+        Assert.NotEmpty(results);
+        Assert.StartsWith("http", results[0].ImageUrl, StringComparison.OrdinalIgnoreCase);
+
+        // Test downloading the image with MarkdownFlowRenderer's method
+        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", "image/jpeg,image/png,image/gif,image/webp,*/*;q=0.5");
+        using var resp = await client.GetAsync(results[0].ImageUrl);
+        byte[] bytes = await resp.Content.ReadAsByteArrayAsync();
+        Assert.True(bytes.Length > 0);
+    }
+
+    [Fact]
     public void AiChatService_SystemPrompt_EnforcesCardsAndCharts()
     {
         var settings = new AiAssistantSettings();
@@ -3145,8 +3461,315 @@ public sealed class PdfReaderTests : IDisposable
         Assert.Contains("[VISUAL CARDS & DATA CHARTS USAGE (MANDATORY)]", prompt);
         Assert.Contains("```cards", prompt);
         Assert.Contains("```chart", prompt);
+        Assert.Contains("[CLEAN ACADEMIC TONE & EMOJI RESTRICTION (MANDATORY)]", prompt);
+        Assert.Contains("DO NOT use emojis in headings", prompt);
+        Assert.Contains("[INTERNET IMAGES & VISUAL REFERENCE INSTRUCTION (MANDATORY)]", prompt);
+        Assert.Contains("MANDATORY VISUAL IMAGE EMBEDDING ON EVERY TOPIC/CONCEPT", prompt);
         Assert.Contains("Corrosion", prompt);
         Assert.Contains("Atmospheric Composition", prompt);
+    }
+
+    [Fact]
+    public void MarkdownFlowRenderer_RendersImageBlockWithCardAndAltText()
+    {
+        Exception? threadEx = null;
+        int blockCount = 0;
+        bool cardIsCollapsedInitially = false;
+        var sta = new Thread(() =>
+        {
+            try
+            {
+                string md = "## Summary\n\n![A Golden Retriever](https://example.com/dog.jpg)\n\nNice photo!";
+                var doc = MarkdownFlowRenderer.RenderToFlowDocument(md, isDarkTheme: false);
+                blockCount = doc.Blocks.Count;
+
+                var imgContainer = doc.Blocks.OfType<BlockUIContainer>().FirstOrDefault();
+                if (imgContainer?.Child is Border outerBorder && outerBorder.Child is StackPanel sp)
+                {
+                    var card = sp.Children.OfType<Border>().FirstOrDefault();
+                    if (card != null)
+                    {
+                        cardIsCollapsedInitially = card.Visibility == System.Windows.Visibility.Collapsed;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                threadEx = ex;
+            }
+        });
+        sta.SetApartmentState(ApartmentState.STA);
+        sta.Start();
+        sta.Join();
+
+        Assert.Null(threadEx);
+        Assert.True(blockCount >= 2);
+        Assert.True(cardIsCollapsedInitially, "Image card must be collapsed initially so no flat empty border renders.");
+    }
+
+    [Fact]
+    public void MarkdownFlowRenderer_BrokenOrUnclosedCards_RendersAsNativeCards_NotRawCodeBlock()
+    {
+        Exception? threadEx = null;
+        bool hasCodeCardsFallback = true;
+        var sta = new Thread(() =>
+        {
+            try
+            {
+                // Exact pattern from user chat history: missing closing '}' on the root object
+                string brokenCardsJson = """
+                ```cards
+                {"title":"Key Functions of Media in Democracy","columns":2,"cards":[{"title":"Informing the Public","badge":"Watchdog","color":"#3B82F6","items":["Keeping people informed.","Providing citizens data."]},{"title":"Voice of the Masses","badge":"Advocate","color":"#10B981","items":["Serving as a platform.","Raising critical issues."]}]
+                ```
+                """;
+
+                var doc = MarkdownFlowRenderer.RenderToFlowDocument(brokenCardsJson, isDarkTheme: false);
+                hasCodeCardsFallback = doc.Blocks.OfType<BlockUIContainer>()
+                    .Any(bui => bui.Child is Border b && b.Child is StackPanel s && s.Children.OfType<TextBlock>().Any(tb => tb.Text == "CARDS"));
+            }
+            catch (Exception ex)
+            {
+                threadEx = ex;
+            }
+        });
+        sta.SetApartmentState(ApartmentState.STA);
+        sta.Start();
+        sta.Join();
+
+        Assert.Null(threadEx);
+        Assert.False(hasCodeCardsFallback, "Broken or unclosed cards JSON must render into native cards grid, never a raw 'CARDS' code block.");
+    }
+
+    [Fact]
+    public void MarkdownFlowRenderer_UserImage1_CardsBlock_RendersAsNativeCards()
+    {
+        Exception? threadEx = null;
+        bool hasCodeBlock = true;
+        var sta = new Thread(() =>
+        {
+            try
+            {
+                string md = """
+                ```cards
+                {"title":"Key Functions of Media in Democracy","columns":2,"cards":[{"title":"Informing the
+                Public","badge":"Watchdog","color":"#3B82F6","items":["Keeping people informed about global and national developments.","Providing citizens with the necessary data to make informed voting choices."]},{"title":"Voice of the
+                Masses","badge":"Advocate","color":"#10B981","items":["Serving as a platform for public opinion and grievances.","Raising critical issues concerning the public domain.","Amplifying marginalized voices and societal concerns."]},{"title":"Accountability
+                Mechanism","badge":"Check & Balance","color":"#EF4444","items":["Monitoring government actions and policies.","Exposing corruption and misuse of power.","Contributing to the resolution of public issues through scrutiny."]},{"title":"Fostering
+                Debate","badge":"Catalyst","color":"#F59E0B","items":["Creating a public forum for diverse viewpoints.","Encouraging critical thinking and intellectual discourse.","Facilitating the debate on socio-economic policies."]}]}
+                ```
+                """;
+
+                var doc = MarkdownFlowRenderer.RenderToFlowDocument(md, isDarkTheme: false);
+                hasCodeBlock = doc.Blocks.OfType<BlockUIContainer>()
+                    .Any(bui => bui.Child is Border b && b.Child is StackPanel s && s.Children.OfType<TextBlock>().Any(tb => tb.Text == "CARDS"));
+            }
+            catch (Exception ex)
+            {
+                threadEx = ex;
+            }
+        });
+        sta.SetApartmentState(ApartmentState.STA);
+        sta.Start();
+        sta.Join();
+
+        Assert.Null(threadEx);
+        Assert.False(hasCodeBlock, "Exact user cards string with multi-line titles must render as native cards, not code block.");
+    }
+
+    [Fact]
+    public void AiAssistantViewModel_TalkMode_ToggleAndSettingsSync()
+    {
+        var settingsService = new AiSettingsService(Path.Combine(_tempDir, "ai_talkmode_settings.json"));
+        using var vm = new AiAssistantViewModel(
+            settingsService,
+            new AiChatService(),
+            new StubWebResearchService([]),
+            new StubVoiceReadoutService());
+
+        Assert.False(vm.IsTalkMode);
+        Assert.False(vm.Settings.TalkMode);
+
+        vm.ToggleTalkModeCommand.Execute(null);
+
+        Assert.True(vm.IsTalkMode);
+        Assert.True(vm.Settings.TalkMode);
+        Assert.Contains("Talk Mode ON", vm.StatusText);
+
+        vm.ToggleTalkModeCommand.Execute(null);
+
+        Assert.False(vm.IsTalkMode);
+        Assert.False(vm.Settings.TalkMode);
+        Assert.Contains("Talk Mode OFF", vm.StatusText);
+    }
+
+    [Theory]
+    [InlineData("gpt-4o-audio-preview", true)]
+    [InlineData("gpt-4o-realtime-preview", true)]
+    [InlineData("gemini-2.0-flash-exp-omni", true)]
+    [InlineData("lfm3-omni-2b", true)]
+    [InlineData("lfm3-audio-2b", true)]
+    [InlineData("claude-3-5-sonnet", false)]
+    [InlineData("llama3.2", false)]
+    public void AiChatService_IsOmniAudioModel_CorrectlyIdentifiesAudioModels(string modelName, bool expected)
+    {
+        bool actual = AiChatService.IsOmniAudioModel(modelName);
+        Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void AiProviderDefaults_IncludesLiquidAiPreset()
+    {
+        var preset = AiProviderDefaults.GetPreset(AiProviderKind.LiquidAi);
+        Assert.NotNull(preset);
+        Assert.Equal("https://api.liquid.ai/openai/v1", preset.DefaultBaseUrl);
+        Assert.Equal("lfm3-omni-2b", preset.DefaultModel);
+        Assert.True(preset.RequiresApiKey);
+        Assert.Contains("Liquid AI", preset.DisplayName);
+    }
+
+    [Fact]
+    public void VoiceReadoutService_WrapPcmInWav_GeneratesValidRiffWavHeader()
+    {
+        byte[] rawPcm = new byte[3200];
+        byte[] wav = VoiceReadoutService.WrapPcmInWav(rawPcm, 16000, 1, 16);
+
+        Assert.Equal(44 + 3200, wav.Length);
+        Assert.Equal((byte)'R', wav[0]);
+        Assert.Equal((byte)'I', wav[1]);
+        Assert.Equal((byte)'F', wav[2]);
+        Assert.Equal((byte)'F', wav[3]);
+        Assert.Equal((byte)'W', wav[8]);
+        Assert.Equal((byte)'A', wav[9]);
+        Assert.Equal((byte)'V', wav[10]);
+        Assert.Equal((byte)'E', wav[11]);
+    }
+
+    private sealed class StubAudioRecordingService : IAudioRecordingService
+    {
+        public bool IsRecording { get; private set; }
+        public double CurrentAudioLevel { get; set; }
+        public event Action<double>? AudioLevelChanged;
+        public event Action<byte[]>? RecordingCompleted;
+        public event Action<string>? ErrorOccurred;
+
+        public bool StartRecording()
+        {
+            IsRecording = true;
+            AudioLevelChanged?.Invoke(0.75);
+            return true;
+        }
+
+        public byte[] StopRecording()
+        {
+            IsRecording = false;
+            byte[] wav = VoiceReadoutService.WrapPcmInWav(new byte[6400], 16000, 1, 16);
+            RecordingCompleted?.Invoke(wav);
+            return wav;
+        }
+
+        public void CancelRecording() => IsRecording = false;
+        public void Dispose() { }
+    }
+
+    [Fact]
+    public async Task AiAssistantViewModel_OmniTalkMode_HoldToTalkAndStateTransitions()
+    {
+        var settingsService = new AiSettingsService(Path.Combine(_tempDir, "ai_omni_talk_settings.json"));
+        settingsService.Save(new AiAssistantSettings { Provider = AiProviderKind.LiquidAi, ApiKey = "fake-key", ModelName = "lfm3-omni-2b" });
+
+        var handler = new StubHttpMessageHandler(req =>
+        {
+            string respJson = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"Hello there! I am LFM3 Omni.\",\"audio\":{\"data\":\"\",\"transcript\":\"Hello there!\"}}}]}";
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(respJson, Encoding.UTF8, "application/json")
+            };
+        });
+
+        var stubRecorder = new StubAudioRecordingService();
+        var chatService = new AiChatService(new HttpClient(handler));
+
+        using var vm = new AiAssistantViewModel(
+            settingsService,
+            chatService,
+            new StubWebResearchService([]),
+            new StubVoiceReadoutService(),
+            audioRecordingService: stubRecorder);
+
+        Assert.False(vm.IsOmniTalkView);
+        Assert.Equal("Ready", vm.OmniTalkState);
+
+        // Switch to Omni Talk View
+        vm.ToggleOmniTalkView();
+        Assert.True(vm.IsOmniTalkView);
+        Assert.True(vm.IsTalkMode);
+
+        // Start hold to talk
+        vm.StartHoldToTalk();
+        Assert.True(vm.IsHoldToTalkPressed);
+        Assert.Equal("Listening", vm.OmniTalkState);
+
+        // Release hold to talk
+        vm.ReleaseHoldToTalk();
+        Assert.False(vm.IsHoldToTalkPressed);
+
+        // Execute direct audio turn
+        byte[] wav = stubRecorder.StopRecording();
+        await vm.SendAudioTurnAsync(wav);
+
+        Assert.Equal("Ready", vm.OmniTalkState);
+        Assert.Equal("Hello there! I am LFM3 Omni.", vm.LatestSpokenTranscript);
+    }
+
+    [Fact]
+    public void MarkdownFlowRenderer_LinkToImage_RendersAsImageBlock_NotJustTextHyperlink()
+    {
+        Exception? threadEx = null;
+        int imageBlocks = 0;
+        int inlineImageContainers = 0;
+        var sta = new Thread(() =>
+        {
+            try
+            {
+                // Standalone link without exclamation mark
+                string md1 = "[The Taj Mahal at sunrise](https://ts2.mm.bing.net/th?id=taj.jpg)\n\nParagraph with inline link [Dog](https://example.com/dog.png) right here.";
+                var doc = MarkdownFlowRenderer.RenderToFlowDocument(md1, isDarkTheme: false);
+
+                // Standalone image block
+                imageBlocks = doc.Blocks.OfType<BlockUIContainer>()
+                    .Count(b => b.Child is Border br && br.Child is StackPanel sp && sp.Children.OfType<Border>().Any());
+
+                // Inline image in paragraph
+                var para = doc.Blocks.OfType<Paragraph>().FirstOrDefault();
+                if (para != null)
+                {
+                    inlineImageContainers = para.Inlines.OfType<InlineUIContainer>().Count();
+                }
+            }
+            catch (Exception ex)
+            {
+                threadEx = ex;
+            }
+        });
+        sta.SetApartmentState(ApartmentState.STA);
+        sta.Start();
+        sta.Join();
+
+        Assert.Null(threadEx);
+        Assert.True(imageBlocks >= 1, "Standalone [alt](image.jpg) must render as a full image block.");
+        Assert.True(inlineImageContainers >= 1, "Inline [alt](image.png) must render as an inline image container.");
+    }
+
+    [Fact]
+    public void WebResearchService_BlockedHostDetection_AndCdnUrlSafety()
+    {
+        Assert.True(WebResearchService.IsBlockedImageHost("https://img.freepik.com/premium-photo/portrait-dog.jpg"));
+        Assert.True(WebResearchService.IsBlockedImageHost("https://www.alamy.com/image/cat.jpg"));
+        Assert.True(WebResearchService.IsBlockedImageHost("https://www.shutterstock.com/image-photo/nature.jpg"));
+        Assert.True(WebResearchService.IsBlockedImageHost("https://i.pinimg.com/736x/ab/cd.jpg"));
+        Assert.False(WebResearchService.IsBlockedImageHost("https://ts2.mm.bing.net/th?id=123"));
+        Assert.False(WebResearchService.IsBlockedImageHost("https://upload.wikimedia.org/wikipedia/commons/test.jpg"));
+        Assert.False(WebResearchService.IsBlockedImageHost("https://images.unsplash.com/photo-123"));
     }
 }
 

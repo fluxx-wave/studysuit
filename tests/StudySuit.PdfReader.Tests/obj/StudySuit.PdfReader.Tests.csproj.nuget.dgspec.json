@@ -54,6 +54,10 @@
               "target": "Package",
               "version": "[1.0.4314.35, )"
             },
+            "NAudio": {
+              "target": "Package",
+              "version": "[2.2.1, )"
+            },
             "PDFtoImage": {
               "target": "Package",
               "version": "[5.4.0, )"
@@ -61,6 +65,10 @@
             "PdfPig": {
               "target": "Package",
               "version": "[0.1.16, )"
+            },
+            "System.Speech": {
+              "target": "Package",
+              "version": "[8.0.0, )"
             },
             "WPF-UI": {
               "target": "Package",
@@ -164,6 +172,10 @@
             "Microsoft.NET.Test.Sdk": {
               "target": "Package",
               "version": "[17.8.0, )"
+            },
+            "NAudio": {
+              "target": "Package",
+              "version": "[2.2.1, )"
             },
             "coverlet.collector": {
               "target": "Package",

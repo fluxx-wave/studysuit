@@ -318,6 +318,51 @@
                     </RadioButton.Style>
                 </RadioButton>
 
+                <!-- AI Mock Tests Tab Button -->
+                <RadioButton GroupName="MainWorkspaceTabs"
+                             DockPanel.Dock="Left"
+                             IsChecked="{Binding IsTestActive, Mode=TwoWay}"
+                             Command="{Binding ShowTestCommand}"
+                             Margin="0,0,8,0"
+                             Padding="12,5"
+                             BorderThickness="1"
+                             Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                             Cursor="Hand"
+                             ToolTip="AI Mock Tests (Topic-based interactive tests with web research, live timer &amp; AI evaluation)">
+                    <RadioButton.Style>
+                        <Style TargetType="RadioButton">
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="BorderBrush" Value="Transparent" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="RadioButton">
+                                        <Border x:Name="TestTabBorder"
+                                                CornerRadius="6"
+                                                Padding="{TemplateBinding Padding}"
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}">
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <ui:SymbolIcon Symbol="Quiz24" FontSize="15" Margin="0,0,6,0" Foreground="#FF38BDF8" />
+                                                <TextBlock Text="AI Tests" FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="TestTabBorder" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                                            </Trigger>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="TestTabBorder" Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}" />
+                                                <Setter TargetName="TestTabBorder" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </RadioButton.Style>
+                </RadioButton>
+
                 <!-- Open Document Tabs -->
                 <ListBox ItemsSource="{Binding Tabs}"
                          SelectedItem="{Binding SelectedTab}"
@@ -4068,6 +4113,1534 @@
             </ScrollViewer>
         </Grid>
         </Grid>
+
+        <!-- AI TEST STUDIO (Topic-Based Interactive MCQs with Web Research, Live Timer & Evaluation Report) -->
+        <Grid x:Name="AiTestRoot"
+              Visibility="{Binding ShowAiTest, Converter={StaticResource BoolToVis}, FallbackValue=Collapsed}"
+              Background="{DynamicResource SolidBackgroundFillColorBaseBrush}"
+              IsVisibleChanged="AnimatedSurface_IsVisibleChanged">
+            <Grid.RenderTransform>
+                <TranslateTransform />
+            </Grid.RenderTransform>
+
+            <Grid DataContext="{Binding AiTest}">
+
+            <!-- ========================================== -->
+            <!-- 1. DASHBOARD VIEW (Past Tests & Stats)     -->
+            <!-- ========================================== -->
+            <Grid Visibility="{Binding IsDashboardVisible, Converter={StaticResource BoolToVis}}">
+                <Grid.RowDefinitions>
+                    <!-- Row 0: Top Header & Stats Overview -->
+                    <RowDefinition Height="Auto" />
+                    <!-- Row 1: Search & Filter Toolbar -->
+                    <RowDefinition Height="Auto" />
+                    <!-- Row 2: Saved Tests Catalog -->
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Row 0: Header Banner & Overview Cards -->
+                <Border Grid.Row="0"
+                        Padding="28,20,28,16"
+                        BorderThickness="0,0,0,1"
+                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                        Background="{DynamicResource LayerFillColorDefaultBrush}">
+                    <StackPanel>
+                        <DockPanel Margin="0,0,0,16">
+                            <!-- Create New Test Primary Action -->
+                            <ui:Button DockPanel.Dock="Right"
+                                       Appearance="Primary"
+                                       Padding="16,8"
+                                       Cursor="Hand"
+                                       Command="{Binding OpenCreateDialogCommand}">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Add24" FontSize="16" Margin="0,0,7,0" />
+                                    <TextBlock Text="Create New Test" FontSize="13" FontWeight="SemiBold" />
+                                </StackPanel>
+                            </ui:Button>
+
+                            <!-- Title & Subtitle -->
+                            <StackPanel VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,4">
+                                    <Border Width="32" Height="32" CornerRadius="8" Background="#2038BDF8" Margin="0,0,10,0">
+                                        <ui:SymbolIcon Symbol="Quiz24" FontSize="18" Foreground="#FF38BDF8" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Border>
+                                    <TextBlock Text="AI Test Studio" FontSize="21" FontWeight="Bold" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <TextBlock Text="Generate interactive exam-style tests on any topic with web research, live countdown timers, and in-depth AI performance analytics."
+                                           FontSize="12"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </DockPanel>
+
+                        <!-- 4 Stat Summary Cards in a Grid -->
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Stat 1: Tests Taken -->
+                            <Border Grid.Column="0" Padding="14,12" CornerRadius="10"
+                                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                                <StackPanel>
+                                    <TextBlock Text="Tests Completed" FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    <TextBlock Text="{Binding TotalTestsCompleted}" FontSize="22" FontWeight="Bold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" Margin="0,3,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Stat 2: Average Score -->
+                            <Border Grid.Column="2" Padding="14,12" CornerRadius="10"
+                                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                                <StackPanel>
+                                    <TextBlock Text="Average Accuracy" FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                                        <TextBlock Text="{Binding AverageScorePercentage}" FontSize="22" FontWeight="Bold" Foreground="#FF10B981" />
+                                        <TextBlock Text="%" FontSize="16" FontWeight="Bold" Foreground="#FF10B981" VerticalAlignment="Bottom" Margin="1,0,0,2" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Stat 3: Questions Answered -->
+                            <Border Grid.Column="4" Padding="14,12" CornerRadius="10"
+                                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                                <StackPanel>
+                                    <TextBlock Text="Questions Solved" FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    <TextBlock Text="{Binding TotalQuestionsAnswered}" FontSize="22" FontWeight="Bold" Foreground="#FF38BDF8" Margin="0,3,0,0" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Stat 4: Top Performing Topic -->
+                            <Border Grid.Column="6" Padding="14,12" CornerRadius="10"
+                                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                                <StackPanel>
+                                    <TextBlock Text="Best Performance Topic" FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    <TextBlock Text="{Binding TopPerformingTopic}" FontSize="14" FontWeight="SemiBold"
+                                               TextTrimming="CharacterEllipsis" ToolTip="{Binding TopPerformingTopic}"
+                                               Foreground="#FFA78BFA" Margin="0,6,0,0" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Row 1: Search & Filter Toolbar -->
+                <Border Grid.Row="1"
+                        Padding="28,12"
+                        BorderThickness="0,0,0,1"
+                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                        Background="{DynamicResource SubtleFillColorSecondaryBrush}">
+                    <DockPanel>
+                        <!-- Search Box -->
+                        <ui:TextBox Width="340"
+                                    PlaceholderText="Search tests by topic, exam, or keyword..."
+                                    Text="{Binding SearchFilterText, UpdateSourceTrigger=PropertyChanged}"
+                                    ClearButtonEnabled="True"
+                                    Padding="10,6"
+                                    VerticalAlignment="Center" />
+
+                        <TextBlock Text="{Binding FilteredSavedTests.Count, StringFormat='{}{0} tests available'}"
+                                   FontSize="11.5"
+                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                                   HorizontalAlignment="Right"
+                                   VerticalAlignment="Center" />
+                    </DockPanel>
+                </Border>
+
+                <!-- Row 2: Saved Tests Catalog -->
+                <ScrollViewer Grid.Row="2"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              Padding="28,20">
+                    <StackPanel>
+                        <!-- Empty State -->
+                        <Border Padding="40,48"
+                                CornerRadius="14"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Top"
+                                Margin="0,40,0,0"
+                                MaxWidth="480"
+                                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                Visibility="{Binding HasNoSavedTests, Converter={StaticResource BoolToVis}}">
+                            <StackPanel HorizontalAlignment="Center">
+                                <Border Width="64" Height="64" CornerRadius="16" Background="#1538BDF8" HorizontalAlignment="Center" Margin="0,0,0,16">
+                                    <ui:SymbolIcon Symbol="Quiz24" FontSize="32" Foreground="#FF38BDF8" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <TextBlock Text="No mock tests created yet" FontSize="17" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,0,0,6" />
+                                <TextBlock Text="Pick any academic topic, competitive exam, or chapter from your PDF textbook. The AI assistant will research online sources and prepare an authentic interactive test."
+                                           FontSize="12.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,20" />
+                                <ui:Button Appearance="Primary" Padding="18,8" HorizontalAlignment="Center" Cursor="Hand" Command="{Binding OpenCreateDialogCommand}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="Add24" FontSize="15" Margin="0,0,6,0" />
+                                        <TextBlock Text="Create Your First Test" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                </ui:Button>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Past Tests Grid / List -->
+                        <ItemsControl ItemsSource="{Binding FilteredSavedTests}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type models:AiTestSession}">
+                                    <Border Margin="0,0,0,12"
+                                            Padding="18,16"
+                                            CornerRadius="12"
+                                            Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                            BorderThickness="1">
+                                        <DockPanel>
+                                            <!-- Right: Action Buttons -->
+                                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
+                                                <!-- Start / Resume Button (when not completed) -->
+                                                <ui:Button Appearance="Primary"
+                                                           Padding="14,7"
+                                                           Margin="0,0,8,0"
+                                                           Cursor="Hand"
+                                                           Visibility="{Binding CanTakeTest, Converter={StaticResource BoolToVis}}"
+                                                           Command="{Binding DataContext.StartTestCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                           CommandParameter="{Binding}">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <ui:SymbolIcon Symbol="Play24" FontSize="14" Margin="0,0,6,0" />
+                                                        <TextBlock Text="Start Test" FontWeight="SemiBold" FontSize="12" />
+                                                    </StackPanel>
+                                                </ui:Button>
+
+                                                <!-- View Report Button (when completed) -->
+                                                <ui:Button Appearance="Secondary"
+                                                           Padding="12,7"
+                                                           Margin="0,0,8,0"
+                                                           Cursor="Hand"
+                                                           Visibility="{Binding IsCompleted, Converter={StaticResource BoolToVis}}"
+                                                           Command="{Binding DataContext.ViewReportCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                           CommandParameter="{Binding}">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <ui:SymbolIcon Symbol="DocumentText24" FontSize="14" Margin="0,0,6,0" Foreground="#FF38BDF8" />
+                                                        <TextBlock Text="View Report &amp; Solutions" FontWeight="SemiBold" FontSize="12" />
+                                                    </StackPanel>
+                                                </ui:Button>
+
+                                                <!-- Retake Button -->
+                                                <ui:Button Appearance="Transparent"
+                                                           Padding="8,7"
+                                                           Margin="0,0,4,0"
+                                                           ToolTip="Retake this test with a fresh timer"
+                                                           Command="{Binding DataContext.RetakeTestCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                           CommandParameter="{Binding}">
+                                                    <ui:SymbolIcon Symbol="ArrowCounterclockwise24" FontSize="14" />
+                                                </ui:Button>
+
+                                                <!-- Delete Button -->
+                                                <ui:Button Appearance="Transparent"
+                                                           Padding="8,7"
+                                                           ToolTip="Delete test"
+                                                           Command="{Binding DataContext.DeleteTestCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                           CommandParameter="{Binding}">
+                                                    <ui:SymbolIcon Symbol="Delete24" FontSize="14" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                                                </ui:Button>
+                                            </StackPanel>
+
+                                            <!-- Left: Test Meta & Info -->
+                                            <StackPanel VerticalAlignment="Center">
+                                                <!-- Badges Row -->
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                                    <!-- Target Exam Badge -->
+                                                    <Border Padding="8,2.5" CornerRadius="6" Background="#1E38BDF8" Margin="0,0,6,0">
+                                                        <TextBlock Text="{Binding TargetExam}" FontSize="10.5" FontWeight="SemiBold" Foreground="#FF38BDF8" />
+                                                    </Border>
+                                                    <!-- Difficulty Badge -->
+                                                    <Border Padding="8,2.5" CornerRadius="6" Background="#18A78BFA" Margin="0,0,6,0">
+                                                        <TextBlock Text="{Binding Difficulty}" FontSize="10.5" FontWeight="SemiBold" Foreground="#FFA78BFA" />
+                                                    </Border>
+                                                    <!-- Duration Badge -->
+                                                    <Border Padding="8,2.5" CornerRadius="6" Background="{DynamicResource SubtleFillColorSecondaryBrush}" Margin="0,0,6,0">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <ui:SymbolIcon Symbol="Clock24" FontSize="10" Margin="0,0,4,0" VerticalAlignment="Center" />
+                                                            <TextBlock Text="{Binding FormattedDuration}" FontSize="10.5" FontWeight="Medium" VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <!-- Question Count Badge -->
+                                                    <Border Padding="8,2.5" CornerRadius="6" Background="{DynamicResource SubtleFillColorSecondaryBrush}" Margin="0,0,6,0">
+                                                        <TextBlock Text="{Binding TotalQuestions, StringFormat='{}{0} Questions'}" FontSize="10.5" FontWeight="Medium" />
+                                                    </Border>
+
+                                                    <!-- Score Badge (if completed) -->
+                                                    <Border Padding="9,2.5" CornerRadius="6" Background="#2210B981" Margin="0,0,6,0"
+                                                            Visibility="{Binding IsCompleted, Converter={StaticResource BoolToVis}}">
+                                                        <TextBlock Text="{Binding ScorePercentage, StringFormat='Score: {0}%'}" FontSize="10.5" FontWeight="Bold" Foreground="#FF10B981" />
+                                                    </Border>
+                                                </StackPanel>
+
+                                                <!-- Title -->
+                                                <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="Bold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" Margin="0,0,0,4" />
+
+                                                <!-- Topic & Date -->
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="Topic: " FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                    <TextBlock Text="{Binding Topic}" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                                                    <TextBlock Text=" • Created " FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                                                    <TextBlock Text="{Binding CreatedAt, StringFormat='{}{0:MMM dd, yyyy • h:mm tt}'}" FontSize="11.5" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+
+            <!-- ============================================================== -->
+            <!-- 2. INTERACTIVE TEST TAKING VIEW (Live Questions, Options, Timer) -->
+            <!-- ============================================================== -->
+            <Grid Visibility="{Binding IsTakingTestVisible, Converter={StaticResource BoolToVis}}">
+                <Grid.RowDefinitions>
+                    <!-- Row 0: Test Navigation Header & Countdown Timer -->
+                    <RowDefinition Height="Auto" />
+                    <!-- Row 1: Active Question Canvas & Navigation Palette -->
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Row 0: Top Header & Countdown Timer -->
+                <Border Grid.Row="0"
+                        Padding="24,12,24,10"
+                        BorderThickness="0,0,0,1"
+                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                        Background="{DynamicResource LayerFillColorDefaultBrush}">
+                    <DockPanel>
+                        <!-- Right: Submit Test Action -->
+                        <ui:Button DockPanel.Dock="Right"
+                                   Appearance="Primary"
+                                   Padding="16,7"
+                                   Cursor="Hand"
+                                   Command="{Binding PromptSubmitTestCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon Symbol="Checkmark24" FontSize="15" Margin="0,0,6,0" />
+                                <TextBlock Text="Submit Test" FontWeight="Bold" FontSize="12.5" />
+                            </StackPanel>
+                        </ui:Button>
+
+                        <!-- Center: Live Countdown Timer Display -->
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Border Padding="14,5" CornerRadius="8"
+                                    Background="#2010B981"
+                                    BorderBrush="#FF10B981"
+                                    BorderThickness="1"
+                                    HorizontalAlignment="Center">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <ui:SymbolIcon Symbol="Timer24" FontSize="16" Foreground="#FF10B981" Margin="0,0,7,0" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding TimeRemainingDisplay}"
+                                               FontSize="17"
+                                               FontWeight="Bold"
+                                               Foreground="#FF10B981"
+                                               FontFamily="Consolas, Segoe UI"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+                            <!-- Time Elapsed Progress Indicator -->
+                            <ProgressBar Width="180" Height="3.5" Margin="0,5,0,0"
+                                         Value="{Binding TimeElapsedPercentage}"
+                                         Foreground="#FF10B981"
+                                         Background="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                        </StackPanel>
+
+                        <!-- Left: Test Meta -->
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="{Binding ActiveSession.Title}" FontSize="14.5" FontWeight="Bold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                <TextBlock Text="{Binding CurrentQuestionNumberDisplay}" FontSize="11.5" FontWeight="SemiBold" Foreground="#FF38BDF8" />
+                                <TextBlock Text=" • Answered " FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Text="{Binding ActiveSession.AnsweredCount}" FontSize="11.5" FontWeight="Bold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                                <TextBlock Text=" of " FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Text="{Binding ActiveSession.TotalQuestions}" FontSize="11.5" FontWeight="Bold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+
+                <!-- Row 1: Split Content (Question Center, Palette Right) -->
+                <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                        <!-- Question Area -->
+                        <ColumnDefinition Width="*" />
+                        <!-- Question Palette Sidebar -->
+                        <ColumnDefinition Width="260" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Left: Question Canvas -->
+                    <ScrollViewer Grid.Column="0"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  Padding="36,24,36,24">
+                        <StackPanel MaxWidth="760" HorizontalAlignment="Center">
+                            <!-- Question Meta & Flag Button -->
+                            <DockPanel Margin="0,0,0,14">
+                                <!-- Flag for Review Toggle Button -->
+                                <ui:Button DockPanel.Dock="Right"
+                                           Appearance="Secondary"
+                                           Padding="10,5"
+                                           Cursor="Hand"
+                                           Command="{Binding ToggleFlagCurrentQuestionCommand}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="Flag24" FontSize="13" Margin="0,0,5,0" Foreground="#FFF59E0B" />
+                                        <TextBlock Text="Flag for Review" FontSize="11.5" />
+                                    </StackPanel>
+                                </ui:Button>
+
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Border Padding="8,3" CornerRadius="6" Background="#1E38BDF8" Margin="0,0,8,0">
+                                        <TextBlock Text="{Binding CurrentQuestion.Number, StringFormat='Question {0}'}" FontSize="11" FontWeight="Bold" Foreground="#FF38BDF8" />
+                                    </Border>
+                                    <!-- Question Type Badge (MCQ / Assertion-Reason / Statement Reasoning / Case) -->
+                                    <Border Padding="8,3" CornerRadius="6" Background="#208B5CF6" Margin="0,0,8,0">
+                                        <TextBlock Text="{Binding CurrentQuestion.QuestionTypeDisplay}" FontSize="11" FontWeight="Bold" Foreground="#FF8B5CF6" />
+                                    </Border>
+                                    <Border Padding="8,3" CornerRadius="6" Background="{DynamicResource SubtleFillColorSecondaryBrush}">
+                                        <TextBlock Text="{Binding CurrentQuestion.Subtopic}" FontSize="11" FontWeight="Medium" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    </Border>
+                                </StackPanel>
+                            </DockPanel>
+
+                            <!-- Case Study / Context Callout (if present) -->
+                            <Border Padding="16,12" CornerRadius="10"
+                                    Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    Margin="0,0,0,14"
+                                    Visibility="{Binding CurrentQuestion.HasContextOrCase, Converter={StaticResource BoolToVis}}">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                        <ui:SymbolIcon Symbol="DocumentText24" FontSize="14" Foreground="#FFF59E0B" Margin="0,0,6,0" />
+                                        <TextBlock Text="Scenario / Context:" FontSize="11.5" FontWeight="Bold" Foreground="#FFF59E0B" />
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding CurrentQuestion.ContextOrCase}" FontSize="13" TextWrapping="Wrap" LineHeight="20" FontStyle="Italic" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Question Statement -->
+                            <Border Padding="22,18" CornerRadius="12"
+                                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    Margin="0,0,0,16">
+                                <TextBlock Text="{Binding CurrentQuestion.QuestionText}"
+                                           FontSize="15.5"
+                                           FontWeight="SemiBold"
+                                           LineHeight="24"
+                                           TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                            </Border>
+
+                            <!-- Assertion & Reason Structured Display (if question is Assertion-Reasoning) -->
+                            <Border Padding="16,14" CornerRadius="10"
+                                    Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                                    BorderBrush="#308B5CF6"
+                                    BorderThickness="1"
+                                    Margin="0,0,0,18"
+                                    Visibility="{Binding CurrentQuestion.HasAssertionReason, Converter={StaticResource BoolToVis}}">
+                                <StackPanel>
+                                    <Border Margin="0,0,0,10" Padding="12,9" CornerRadius="8" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                                        <DockPanel>
+                                            <Border DockPanel.Dock="Left" Background="#258B5CF6" CornerRadius="4" Padding="6,2" Margin="0,0,10,0" VerticalAlignment="Top">
+                                                <TextBlock Text="Assertion (A)" FontSize="11" FontWeight="Bold" Foreground="#FF8B5CF6" />
+                                            </Border>
+                                            <TextBlock Text="{Binding CurrentQuestion.Assertion}" FontSize="13.5" FontWeight="Medium" TextWrapping="Wrap" LineHeight="21" />
+                                        </DockPanel>
+                                    </Border>
+                                    <Border Padding="12,9" CornerRadius="8" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                                        <DockPanel>
+                                            <Border DockPanel.Dock="Left" Background="#2538BDF8" CornerRadius="4" Padding="6,2" Margin="0,0,10,0" VerticalAlignment="Top">
+                                                <TextBlock Text="Reason (R)" FontSize="11" FontWeight="Bold" Foreground="#FF38BDF8" />
+                                            </Border>
+                                            <TextBlock Text="{Binding CurrentQuestion.Reason}" FontSize="13.5" FontWeight="Medium" TextWrapping="Wrap" LineHeight="21" />
+                                        </DockPanel>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Statements I & II Structured Display (if question is Statement Reasoning) -->
+                            <Border Padding="16,14" CornerRadius="10"
+                                    Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                                    BorderBrush="#30EC4899"
+                                    BorderThickness="1"
+                                    Margin="0,0,0,18"
+                                    Visibility="{Binding CurrentQuestion.HasStatements, Converter={StaticResource BoolToVis}}">
+                                <StackPanel>
+                                    <Border Margin="0,0,0,10" Padding="12,9" CornerRadius="8" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                                        <DockPanel>
+                                            <Border DockPanel.Dock="Left" Background="#25EC4899" CornerRadius="4" Padding="6,2" Margin="0,0,10,0" VerticalAlignment="Top">
+                                                <TextBlock Text="Statement I" FontSize="11" FontWeight="Bold" Foreground="#FFEC4899" />
+                                            </Border>
+                                            <TextBlock Text="{Binding CurrentQuestion.Statement1}" FontSize="13.5" FontWeight="Medium" TextWrapping="Wrap" LineHeight="21" />
+                                        </DockPanel>
+                                    </Border>
+                                    <Border Padding="12,9" CornerRadius="8" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                                        <DockPanel>
+                                            <Border DockPanel.Dock="Left" Background="#25EC4899" CornerRadius="4" Padding="6,2" Margin="0,0,10,0" VerticalAlignment="Top">
+                                                <TextBlock Text="Statement II" FontSize="11" FontWeight="Bold" Foreground="#FFEC4899" />
+                                            </Border>
+                                            <TextBlock Text="{Binding CurrentQuestion.Statement2}" FontSize="13.5" FontWeight="Medium" TextWrapping="Wrap" LineHeight="21" />
+                                        </DockPanel>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Options Heading -->
+                            <TextBlock Text="Select your answer:" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,10" />
+
+                            <!-- Option A Card -->
+                            <Button Style="{StaticResource ThemedCardButtonStyle}"
+                                    Margin="0,0,0,10"
+                                    HorizontalContentAlignment="Stretch"
+                                    Command="{Binding SelectOptionCommand}"
+                                    CommandParameter="0">
+                                <Border Padding="16,14" CornerRadius="10"
+                                        Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1.5">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding CurrentQuestion.IsOptionASelected}" Value="True">
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                                    <Setter Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <DockPanel>
+                                        <!-- Selection Indicator Circle / Tick -->
+                                        <Border DockPanel.Dock="Right" Width="22" Height="22" CornerRadius="11"
+                                                BorderThickness="1.5" Margin="12,0,0,0" VerticalAlignment="Center">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}" />
+                                                    <Setter Property="Background" Value="Transparent" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding CurrentQuestion.IsOptionASelected}" Value="True">
+                                                            <Setter Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                                            <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <ui:SymbolIcon Symbol="Checkmark24" FontSize="11" Foreground="White"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                           Visibility="{Binding CurrentQuestion.IsOptionASelected, Converter={StaticResource BoolToVis}}" />
+                                        </Border>
+
+                                        <Border Width="28" Height="28" CornerRadius="14"
+                                                Background="#1538BDF8"
+                                                Margin="0,0,14,0" VerticalAlignment="Center">
+                                            <TextBlock Text="A" FontSize="13" FontWeight="Bold" Foreground="#FF38BDF8" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Border>
+                                        <TextBlock Text="{Binding CurrentQuestion.OptionA}"
+                                                   FontSize="13.5"
+                                                   FontWeight="Medium"
+                                                   TextWrapping="Wrap"
+                                                   VerticalAlignment="Center" />
+                                    </DockPanel>
+                                </Border>
+                            </Button>
+
+                            <!-- Option B Card -->
+                            <Button Style="{StaticResource ThemedCardButtonStyle}"
+                                    Margin="0,0,0,10"
+                                    HorizontalContentAlignment="Stretch"
+                                    Command="{Binding SelectOptionCommand}"
+                                    CommandParameter="1">
+                                <Border Padding="16,14" CornerRadius="10"
+                                        Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1.5">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding CurrentQuestion.IsOptionBSelected}" Value="True">
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                                    <Setter Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <DockPanel>
+                                        <!-- Selection Indicator Circle / Tick -->
+                                        <Border DockPanel.Dock="Right" Width="22" Height="22" CornerRadius="11"
+                                                BorderThickness="1.5" Margin="12,0,0,0" VerticalAlignment="Center">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}" />
+                                                    <Setter Property="Background" Value="Transparent" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding CurrentQuestion.IsOptionBSelected}" Value="True">
+                                                            <Setter Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                                            <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <ui:SymbolIcon Symbol="Checkmark24" FontSize="11" Foreground="White"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                           Visibility="{Binding CurrentQuestion.IsOptionBSelected, Converter={StaticResource BoolToVis}}" />
+                                        </Border>
+
+                                        <Border Width="28" Height="28" CornerRadius="14"
+                                                Background="#1538BDF8"
+                                                Margin="0,0,14,0" VerticalAlignment="Center">
+                                            <TextBlock Text="B" FontSize="13" FontWeight="Bold" Foreground="#FF38BDF8" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Border>
+                                        <TextBlock Text="{Binding CurrentQuestion.OptionB}"
+                                                   FontSize="13.5"
+                                                   FontWeight="Medium"
+                                                   TextWrapping="Wrap"
+                                                   VerticalAlignment="Center" />
+                                    </DockPanel>
+                                </Border>
+                            </Button>
+
+                            <!-- Option C Card -->
+                            <Button Style="{StaticResource ThemedCardButtonStyle}"
+                                    Margin="0,0,0,10"
+                                    HorizontalContentAlignment="Stretch"
+                                    Command="{Binding SelectOptionCommand}"
+                                    CommandParameter="2">
+                                <Border Padding="16,14" CornerRadius="10"
+                                        Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1.5">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding CurrentQuestion.IsOptionCSelected}" Value="True">
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                                    <Setter Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <DockPanel>
+                                        <!-- Selection Indicator Circle / Tick -->
+                                        <Border DockPanel.Dock="Right" Width="22" Height="22" CornerRadius="11"
+                                                BorderThickness="1.5" Margin="12,0,0,0" VerticalAlignment="Center">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}" />
+                                                    <Setter Property="Background" Value="Transparent" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding CurrentQuestion.IsOptionCSelected}" Value="True">
+                                                            <Setter Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                                            <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <ui:SymbolIcon Symbol="Checkmark24" FontSize="11" Foreground="White"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                           Visibility="{Binding CurrentQuestion.IsOptionCSelected, Converter={StaticResource BoolToVis}}" />
+                                        </Border>
+
+                                        <Border Width="28" Height="28" CornerRadius="14"
+                                                Background="#1538BDF8"
+                                                Margin="0,0,14,0" VerticalAlignment="Center">
+                                            <TextBlock Text="C" FontSize="13" FontWeight="Bold" Foreground="#FF38BDF8" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Border>
+                                        <TextBlock Text="{Binding CurrentQuestion.OptionC}"
+                                                   FontSize="13.5"
+                                                   FontWeight="Medium"
+                                                   TextWrapping="Wrap"
+                                                   VerticalAlignment="Center" />
+                                    </DockPanel>
+                                </Border>
+                            </Button>
+
+                            <!-- Option D Card -->
+                            <Button Style="{StaticResource ThemedCardButtonStyle}"
+                                    Margin="0,0,0,14"
+                                    HorizontalContentAlignment="Stretch"
+                                    Command="{Binding SelectOptionCommand}"
+                                    CommandParameter="3">
+                                <Border Padding="16,14" CornerRadius="10"
+                                        Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1.5">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding CurrentQuestion.IsOptionDSelected}" Value="True">
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                                    <Setter Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <DockPanel>
+                                        <!-- Selection Indicator Circle / Tick -->
+                                        <Border DockPanel.Dock="Right" Width="22" Height="22" CornerRadius="11"
+                                                BorderThickness="1.5" Margin="12,0,0,0" VerticalAlignment="Center">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}" />
+                                                    <Setter Property="Background" Value="Transparent" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding CurrentQuestion.IsOptionDSelected}" Value="True">
+                                                            <Setter Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                                            <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <ui:SymbolIcon Symbol="Checkmark24" FontSize="11" Foreground="White"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                           Visibility="{Binding CurrentQuestion.IsOptionDSelected, Converter={StaticResource BoolToVis}}" />
+                                        </Border>
+
+                                        <Border Width="28" Height="28" CornerRadius="14"
+                                                Background="#1538BDF8"
+                                                Margin="0,0,14,0" VerticalAlignment="Center">
+                                            <TextBlock Text="D" FontSize="13" FontWeight="Bold" Foreground="#FF38BDF8" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Border>
+                                        <TextBlock Text="{Binding CurrentQuestion.OptionD}"
+                                                   FontSize="13.5"
+                                                   FontWeight="Medium"
+                                                   TextWrapping="Wrap"
+                                                   VerticalAlignment="Center" />
+                                    </DockPanel>
+                                </Border>
+                            </Button>
+
+                            <!-- Bottom Action Navigation Toolbar -->
+                            <DockPanel Margin="0,10,0,0">
+                                <!-- Clear Choice Button -->
+                                <ui:Button Appearance="Transparent"
+                                           Padding="10,6"
+                                           Command="{Binding ClearCurrentOptionCommand}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:SymbolIcon Symbol="Eraser24" FontSize="13" Margin="0,0,5,0" />
+                                        <TextBlock Text="Clear Answer" FontSize="11.5" />
+                                    </StackPanel>
+                                </ui:Button>
+
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                    <!-- Previous Question -->
+                                    <ui:Button Appearance="Secondary"
+                                               Padding="14,7"
+                                               Margin="0,0,8,0"
+                                               IsEnabled="{Binding CanGoPrevious}"
+                                               Command="{Binding PreviousQuestionCommand}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <ui:SymbolIcon Symbol="ChevronLeft24" FontSize="13" Margin="0,0,4,0" />
+                                            <TextBlock Text="Previous" FontSize="12" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                    </ui:Button>
+
+                                    <!-- Next Question -->
+                                    <ui:Button Appearance="Primary"
+                                               Padding="16,7"
+                                               IsEnabled="{Binding CanGoNext}"
+                                               Command="{Binding NextQuestionCommand}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="Next" FontSize="12" FontWeight="SemiBold" Margin="0,0,4,0" />
+                                            <ui:SymbolIcon Symbol="ChevronRight24" FontSize="13" />
+                                        </StackPanel>
+                                    </ui:Button>
+                                </StackPanel>
+                            </DockPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- Right: Question Palette Grid -->
+                    <Border Grid.Column="1"
+                            BorderThickness="1,0,0,0"
+                            BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                            Background="{DynamicResource LayerFillColorDefaultBrush}"
+                            Padding="16,18">
+                        <DockPanel>
+                            <!-- Finish & Submit Bottom Button -->
+                            <ui:Button DockPanel.Dock="Bottom"
+                                       Appearance="Primary"
+                                       Padding="12,8"
+                                       Margin="0,16,0,0"
+                                       Cursor="Hand"
+                                       HorizontalAlignment="Stretch"
+                                       Command="{Binding PromptSubmitTestCommand}">
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                    <ui:SymbolIcon Symbol="Checkmark24" FontSize="15" Margin="0,0,6,0" />
+                                    <TextBlock Text="Finish &amp; Submit" FontWeight="Bold" FontSize="12.5" />
+                                </StackPanel>
+                            </ui:Button>
+
+                            <!-- Palette Summary Legend -->
+                            <Border DockPanel.Dock="Bottom"
+                                    Padding="10,8"
+                                    CornerRadius="8"
+                                    Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                                    Margin="0,12,0,0">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                        <Border Width="8" Height="8" CornerRadius="4" Background="#FF10B981" Margin="0,0,6,0" />
+                                        <TextBlock Text="{Binding ActiveSession.AnsweredCount, StringFormat='Answered: {0}'}" FontSize="11" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                        <Border Width="8" Height="8" CornerRadius="4" Background="#FFF59E0B" Margin="0,0,6,0" />
+                                        <TextBlock Text="{Binding ActiveSession.FlaggedCount, StringFormat='Flagged: {0}'}" FontSize="11" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Border Width="8" Height="8" CornerRadius="4" Background="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,0,6,0" />
+                                        <TextBlock Text="{Binding ActiveSession.UnansweredCount, StringFormat='Remaining: {0}'}" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                            <StackPanel>
+                                <TextBlock Text="Question Palette" FontSize="13" FontWeight="Bold" Margin="0,0,0,12" />
+
+                                <!-- WrapPanel of Number Buttons -->
+                                <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="360">
+                                    <ItemsControl ItemsSource="{Binding ActiveSession.Questions}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate DataType="{x:Type models:TestQuestion}">
+                                                <ui:Button Margin="3"
+                                                           Width="36"
+                                                           Height="36"
+                                                           Padding="0"
+                                                           Cursor="Hand"
+                                                           Command="{Binding DataContext.JumpToQuestionCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                           CommandParameter="{Binding}">
+                                                    <ui:Button.Style>
+                                                        <Style TargetType="{x:Type ui:Button}" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                                            <Setter Property="Appearance" Value="Secondary" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsAnswered}" Value="True">
+                                                                    <Setter Property="Appearance" Value="Primary" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding IsFlagged}" Value="True">
+                                                                    <Setter Property="Appearance" Value="Caution" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </ui:Button.Style>
+                                                    <TextBlock Text="{Binding Number}" FontSize="12" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                </ui:Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+                </Grid>
+            </Grid>
+
+            <!-- ========================================================== -->
+            <!-- 3. COMPREHENSIVE REPORT & FEEDBACK VIEW                    -->
+            <!-- ========================================================== -->
+            <Grid Visibility="{Binding IsReportVisible, Converter={StaticResource BoolToVis}}">
+                <Grid.RowDefinitions>
+                    <!-- Row 0: Top Header -->
+                    <RowDefinition Height="Auto" />
+                    <!-- Row 1: Report Content -->
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Row 0: Top Header -->
+                <Border Grid.Row="0"
+                        Padding="24,14,24,12"
+                        BorderThickness="0,0,0,1"
+                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                        Background="{DynamicResource LayerFillColorDefaultBrush}">
+                    <DockPanel>
+                        <!-- Back to Test Studio Action -->
+                        <ui:Button DockPanel.Dock="Left"
+                                   Appearance="Secondary"
+                                   Padding="12,6"
+                                   Margin="0,0,16,0"
+                                   Cursor="Hand"
+                                   Command="{Binding BackToDashboardCommand}">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon Symbol="ArrowLeft24" FontSize="13" Margin="0,0,5,0" />
+                                <TextBlock Text="Back to Tests" FontSize="12" FontWeight="SemiBold" />
+                            </StackPanel>
+                        </ui:Button>
+
+                        <!-- Retake Action -->
+                        <ui:Button DockPanel.Dock="Right"
+                                   Appearance="Primary"
+                                   Padding="14,6"
+                                   Cursor="Hand"
+                                   Command="{Binding RetakeTestCommand}"
+                                   CommandParameter="{Binding ActiveSession}">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon Symbol="ArrowCounterclockwise24" FontSize="14" Margin="0,0,6,0" />
+                                <TextBlock Text="Retake Test" FontWeight="SemiBold" FontSize="12" />
+                            </StackPanel>
+                        </ui:Button>
+
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Performance &amp; Feedback Report" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                            <TextBlock Text="{Binding ActiveSession.Topic, StringFormat='Evaluated topic: {0}'}" FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+
+                <!-- Row 1: Report Body -->
+                <ScrollViewer Grid.Row="1"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              Padding="32,24">
+                    <StackPanel MaxWidth="880" HorizontalAlignment="Center">
+                        <!-- Hero Score Banner Card -->
+                        <Border Padding="24,20" CornerRadius="14"
+                                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                Margin="0,0,0,20">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="220" />
+                                    <ColumnDefinition Width="1" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Left: Radial / Big Percentage & Grade -->
+                                <StackPanel Grid.Column="0" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <Border Width="90" Height="90" CornerRadius="45"
+                                            Background="#1810B981"
+                                            BorderBrush="#FF10B981"
+                                            BorderThickness="3"
+                                            HorizontalAlignment="Center">
+                                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding ActiveSession.ScorePercentage, StringFormat='{}{0}%'}"
+                                                       FontSize="24" FontWeight="Bold" Foreground="#FF10B981" HorizontalAlignment="Center" />
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock Text="{Binding ActiveSession.Grade}" FontSize="13" FontWeight="Bold"
+                                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                                               HorizontalAlignment="Center" Margin="0,8,0,0" />
+                                    <TextBlock Text="{Binding ActiveSession.ScoreDisplay, StringFormat='{}{0} correct'}" FontSize="11.5"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                               HorizontalAlignment="Center" Margin="0,2,0,0" />
+                                </StackPanel>
+
+                                <!-- Divider -->
+                                <Rectangle Grid.Column="1" Fill="{DynamicResource ControlStrokeColorDefaultBrush}" Width="1" Margin="0,4" />
+
+                                <!-- Right: Metrics Grid -->
+                                <Grid Grid.Column="2" Margin="24,0,0,0" VerticalAlignment="Center">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="12" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="12" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Metric 1: Correct -->
+                                    <Border Grid.Row="0" Grid.Column="0" Padding="12,10" CornerRadius="8" Background="#1510B981">
+                                        <StackPanel>
+                                            <TextBlock Text="Correct Answers" FontSize="11" Foreground="#FF10B981" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding ActiveSession.CorrectCount}" FontSize="18" FontWeight="Bold" Foreground="#FF10B981" Margin="0,2,0,0" />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Metric 2: Incorrect -->
+                                    <Border Grid.Row="0" Grid.Column="2" Padding="12,10" CornerRadius="8" Background="#15EF4444">
+                                        <StackPanel>
+                                            <TextBlock Text="Incorrect Answers" FontSize="11" Foreground="#FFEF4444" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding ActiveSession.IncorrectCount}" FontSize="18" FontWeight="Bold" Foreground="#FFEF4444" Margin="0,2,0,0" />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Metric 3: Unanswered -->
+                                    <Border Grid.Row="2" Grid.Column="0" Padding="12,10" CornerRadius="8" Background="#15F59E0B">
+                                        <StackPanel>
+                                            <TextBlock Text="Unanswered Questions" FontSize="11" Foreground="#FFF59E0B" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding ActiveSession.UnansweredCount}" FontSize="18" FontWeight="Bold" Foreground="#FFF59E0B" Margin="0,2,0,0" />
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Metric 4: Time Spent -->
+                                    <Border Grid.Row="2" Grid.Column="2" Padding="12,10" CornerRadius="8" Background="#1538BDF8">
+                                        <StackPanel>
+                                            <TextBlock Text="Time Spent" FontSize="11" Foreground="#FF38BDF8" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding ActiveSession.FormattedTimeSpent}" FontSize="18" FontWeight="Bold" Foreground="#FF38BDF8" Margin="0,2,0,0" />
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </Grid>
+                        </Border>
+
+                        <!-- AI Performance Evaluation Section -->
+                        <Border Padding="24,20" CornerRadius="14"
+                                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                Margin="0,0,0,24">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                    <Border Width="26" Height="26" CornerRadius="6" Background="#20A78BFA" Margin="0,0,8,0">
+                                        <ui:SymbolIcon Symbol="BrainCircuit24" FontSize="14" Foreground="#FFA78BFA" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Border>
+                                    <TextBlock Text="AI Assistant Analysis &amp; Feedback" FontSize="15" FontWeight="Bold" VerticalAlignment="Center" />
+                                </StackPanel>
+
+                                <!-- Executive Summary -->
+                                <TextBlock Text="{Binding ActiveSession.EvaluationReport.Summary}"
+                                           FontSize="13.5"
+                                           LineHeight="21"
+                                           FontWeight="Medium"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,12" />
+
+                                <TextBlock Text="{Binding ActiveSession.EvaluationReport.OverallAssessment}"
+                                           FontSize="12.5"
+                                           LineHeight="19"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           TextWrapping="Wrap"
+                                           Margin="0,0,0,18" />
+
+                                <!-- Strengths vs Weaknesses 2-Column Grid -->
+                                <Grid Margin="0,0,0,16">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="14" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Strengths -->
+                                    <Border Grid.Column="0" Padding="14,12" CornerRadius="10" Background="#1010B981" BorderBrush="#3010B981" BorderThickness="1">
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                <ui:SymbolIcon Symbol="CheckmarkCircle24" FontSize="14" Foreground="#FF10B981" Margin="0,0,6,0" />
+                                                <TextBlock Text="Strengths &amp; Concepts Mastered" FontSize="12" FontWeight="Bold" Foreground="#FF10B981" />
+                                            </StackPanel>
+                                            <ItemsControl ItemsSource="{Binding ActiveSession.EvaluationReport.StrongAreas}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding StringFormat='• {0}'}" FontSize="12" Foreground="{DynamicResource TextFillColorPrimaryBrush}" Margin="0,2" TextWrapping="Wrap" />
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Areas of Improvement -->
+                                    <Border Grid.Column="2" Padding="14,12" CornerRadius="10" Background="#10F59E0B" BorderBrush="#30F59E0B" BorderThickness="1">
+                                        <StackPanel>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                                <ui:SymbolIcon Symbol="Alert24" FontSize="14" Foreground="#FFF59E0B" Margin="0,0,6,0" />
+                                                <TextBlock Text="Areas for Improvement" FontSize="12" FontWeight="Bold" Foreground="#FFF59E0B" />
+                                            </StackPanel>
+                                            <ItemsControl ItemsSource="{Binding ActiveSession.EvaluationReport.WeakAreas}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding StringFormat='• {0}'}" FontSize="12" Foreground="{DynamicResource TextFillColorPrimaryBrush}" Margin="0,2" TextWrapping="Wrap" />
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+
+                                <!-- Actionable Study Suggestions -->
+                                <Border Padding="14,12" CornerRadius="10" Background="#1038BDF8" BorderBrush="#3038BDF8" BorderThickness="1">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                            <ui:SymbolIcon Symbol="Lightbulb24" FontSize="14" Foreground="#FF38BDF8" Margin="0,0,6,0" />
+                                            <TextBlock Text="Actionable Revision Advice &amp; Next Steps" FontSize="12" FontWeight="Bold" Foreground="#FF38BDF8" />
+                                        </StackPanel>
+                                        <ItemsControl ItemsSource="{Binding ActiveSession.EvaluationReport.ActionableSuggestions}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding StringFormat='✓ {0}'}" FontSize="12" LineHeight="18" Foreground="{DynamicResource TextFillColorPrimaryBrush}" Margin="0,3" TextWrapping="Wrap" />
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Question Review Header & Filter Tabs -->
+                        <DockPanel Margin="0,0,0,14">
+                            <TextBlock Text="Detailed Question Review &amp; Solutions" FontSize="15" FontWeight="Bold" VerticalAlignment="Center" />
+
+                            <!-- Filter Chips: All, Correct, Incorrect, Unanswered -->
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                                <ui:Button Appearance="Secondary" Padding="10,4" Margin="0,0,4,0" FontSize="11.5"
+                                           Content="All" Command="{Binding SetReportFilterCommand}" CommandParameter="All" />
+                                <ui:Button Appearance="Secondary" Padding="10,4" Margin="0,0,4,0" FontSize="11.5"
+                                           Content="Correct Only" Command="{Binding SetReportFilterCommand}" CommandParameter="Correct" />
+                                <ui:Button Appearance="Secondary" Padding="10,4" Margin="0,0,4,0" FontSize="11.5"
+                                           Content="Incorrect Only" Command="{Binding SetReportFilterCommand}" CommandParameter="Incorrect" />
+                                <ui:Button Appearance="Secondary" Padding="10,4" FontSize="11.5"
+                                           Content="Unanswered" Command="{Binding SetReportFilterCommand}" CommandParameter="Unanswered" />
+                            </StackPanel>
+                        </DockPanel>
+
+                        <!-- List of Question Review Cards -->
+                        <ItemsControl ItemsSource="{Binding FilteredReportQuestions}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type models:TestQuestion}">
+                                    <Border Margin="0,0,0,16" Padding="20,16" CornerRadius="12"
+                                            Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                            BorderThickness="1">
+                                        <StackPanel>
+                                            <!-- Card Header: Q Number, Subtopic, Status Badge -->
+                                            <DockPanel Margin="0,0,0,10">
+                                                <!-- Status Badge (Correct / Incorrect / Unanswered) -->
+                                                <Border DockPanel.Dock="Right" Padding="8,3" CornerRadius="6">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Background" Value="#15F59E0B" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsCorrect}" Value="True">
+                                                                    <Setter Property="Background" Value="#2010B981" />
+                                                                </DataTrigger>
+                                                                <MultiDataTrigger>
+                                                                    <MultiDataTrigger.Conditions>
+                                                                        <Condition Binding="{Binding IsAnswered}" Value="True" />
+                                                                        <Condition Binding="{Binding IsCorrect}" Value="False" />
+                                                                    </MultiDataTrigger.Conditions>
+                                                                    <Setter Property="Background" Value="#20EF4444" />
+                                                                </MultiDataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <TextBlock FontSize="11" FontWeight="Bold">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Text" Value="UNANSWERED" />
+                                                                <Setter Property="Foreground" Value="#FFF59E0B" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsCorrect}" Value="True">
+                                                                        <Setter Property="Text" Value="CORRECT (+1)" />
+                                                                        <Setter Property="Foreground" Value="#FF10B981" />
+                                                                    </DataTrigger>
+                                                                    <MultiDataTrigger>
+                                                                        <MultiDataTrigger.Conditions>
+                                                                            <Condition Binding="{Binding IsAnswered}" Value="True" />
+                                                                            <Condition Binding="{Binding IsCorrect}" Value="False" />
+                                                                        </MultiDataTrigger.Conditions>
+                                                                        <Setter Property="Text" Value="INCORRECT" />
+                                                                        <Setter Property="Foreground" Value="#FFEF4444" />
+                                                                    </MultiDataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                </Border>
+
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <Border Padding="8,2.5" CornerRadius="6" Background="#1E38BDF8" Margin="0,0,8,0">
+                                                        <TextBlock Text="{Binding Number, StringFormat='Q{0}'}" FontSize="11" FontWeight="Bold" Foreground="#FF38BDF8" />
+                                                    </Border>
+                                                    <Border Padding="8,2.5" CornerRadius="6" Background="#208B5CF6" Margin="0,0,8,0">
+                                                        <TextBlock Text="{Binding QuestionTypeDisplay}" FontSize="11" FontWeight="Bold" Foreground="#FF8B5CF6" />
+                                                    </Border>
+                                                    <TextBlock Text="{Binding Subtopic}" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </DockPanel>
+
+                                            <!-- Question Statement -->
+                                            <TextBlock Text="{Binding QuestionText}" FontSize="14" FontWeight="SemiBold" LineHeight="21" TextWrapping="Wrap" Margin="0,0,0,12" />
+
+                                            <!-- Solution / Options Breakdown -->
+                                            <Border Padding="12,10" CornerRadius="8" Background="{DynamicResource SubtleFillColorSecondaryBrush}" Margin="0,0,0,10">
+                                                <StackPanel>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                                        <TextBlock Text="Your Answer: " FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                        <TextBlock Text="{Binding SelectedOptionLabel}" FontSize="11.5" FontWeight="Bold" />
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock Text="Correct Answer: " FontSize="11.5" Foreground="#FF10B981" FontWeight="SemiBold" />
+                                                        <TextBlock Text="{Binding CorrectOptionLabel}" FontSize="11.5" FontWeight="Bold" Foreground="#FF10B981" />
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </Border>
+
+                                            <!-- Step-by-Step Educational Explanation -->
+                                            <Border Padding="12,10" CornerRadius="8" Background="#1238BDF8" BorderBrush="#2538BDF8" BorderThickness="1">
+                                                <StackPanel>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                                        <ui:SymbolIcon Symbol="BookOpen24" FontSize="13" Foreground="#FF38BDF8" Margin="0,0,5,0" />
+                                                        <TextBlock Text="Explanation &amp; Conceptual Solution:" FontSize="11.5" FontWeight="Bold" Foreground="#FF38BDF8" />
+                                                    </StackPanel>
+                                                    <TextBlock Text="{Binding Explanation}" FontSize="12" LineHeight="18" Foreground="{DynamicResource TextFillColorPrimaryBrush}" TextWrapping="Wrap" />
+                                                </StackPanel>
+                                            </Border>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+
+            <!-- ============================================================== -->
+            <!-- 4. MODALS & OVERLAYS                                           -->
+            <!-- ============================================================== -->
+
+            <!-- CREATE NEW TEST DIALOG MODAL -->
+            <Grid Background="#90000000"
+                  Visibility="{Binding IsCreateDialogVisible, Converter={StaticResource BoolToVis}}">
+                <Border Width="580"
+                        Padding="28,24"
+                        CornerRadius="16"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Background="{DynamicResource ApplicationBackgroundBrush}"
+                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                        BorderThickness="1">
+                    <StackPanel>
+                        <!-- Dialog Header -->
+                        <DockPanel Margin="0,0,0,16">
+                            <ui:Button DockPanel.Dock="Right"
+                                       Appearance="Transparent"
+                                       Padding="6"
+                                       Command="{Binding CloseCreateDialogCommand}">
+                                <ui:SymbolIcon Symbol="Dismiss24" FontSize="14" />
+                            </ui:Button>
+
+                            <StackPanel VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,2">
+                                    <Border Width="26" Height="26" CornerRadius="6" Background="#2038BDF8" Margin="0,0,8,0">
+                                        <ui:SymbolIcon Symbol="Quiz24" FontSize="15" Foreground="#FF38BDF8" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Border>
+                                    <TextBlock Text="Create AI Interactive Mock Test" FontSize="16" FontWeight="Bold" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <TextBlock Text="AI agent will research online sources and prepare timed multiple-choice questions." FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                        </DockPanel>
+
+                        <!-- ============================================== -->
+                        <!-- Test Source Mode Selector (Topic / Open PDF / Pick PDF / Downloaded NCERT) -->
+                        <!-- ============================================== -->
+                        <TextBlock Text="Choose Test Source" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,8" />
+                        <WrapPanel Margin="0,0,0,12">
+                            <!-- Online Topic Mode -->
+                            <RadioButton GroupName="TestSourceGroup"
+                                         Content="🌐 Online Topic"
+                                         IsChecked="{Binding IsSourceTopic, Mode=OneWay}"
+                                         Command="{Binding SelectSourceKindCommand}"
+                                         CommandParameter="Topic"
+                                         Margin="0,0,8,6"
+                                         FontWeight="SemiBold"
+                                         FontSize="12" />
+                            <!-- Currently Open PDF -->
+                            <RadioButton GroupName="TestSourceGroup"
+                                         Content="📄 Currently Open PDF"
+                                         IsChecked="{Binding IsSourceOpenPdf, Mode=OneWay}"
+                                         Command="{Binding SelectSourceKindCommand}"
+                                         CommandParameter="OpenPdf"
+                                         IsEnabled="{Binding HasOpenPdf}"
+                                         Margin="0,0,8,6"
+                                         FontWeight="SemiBold"
+                                         FontSize="12" />
+                            <!-- Pick PDF from Computer -->
+                            <RadioButton GroupName="TestSourceGroup"
+                                         Content="📂 Pick PDF from PC"
+                                         IsChecked="{Binding IsSourceLocalFile, Mode=OneWay}"
+                                         Command="{Binding SelectSourceKindCommand}"
+                                         CommandParameter="LocalFile"
+                                         Margin="0,0,8,6"
+                                         FontWeight="SemiBold"
+                                         FontSize="12" />
+                            <!-- Downloaded NCERT Book -->
+                            <RadioButton GroupName="TestSourceGroup"
+                                         Content="📚 NCERT Textbook"
+                                         IsChecked="{Binding IsSourceDownloadedNcert, Mode=OneWay}"
+                                         Command="{Binding SelectSourceKindCommand}"
+                                         CommandParameter="DownloadedNcert"
+                                         Margin="0,0,0,6"
+                                         FontWeight="SemiBold"
+                                         FontSize="12" />
+                        </WrapPanel>
+
+                        <!-- 1. Topic Input (shown ONLY when Topic source is selected) -->
+                        <StackPanel Visibility="{Binding RequiresTopicInput, Converter={StaticResource BoolToVis}}" Margin="0,0,0,14">
+                            <TextBlock Text="Enter Test Topic or Subject *" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+                            <ui:TextBox PlaceholderText="e.g. Thermodynamics, Indian Constitution Article 21, Cell Division, Optics..."
+                                        Text="{Binding NewTopic, UpdateSourceTrigger=PropertyChanged}"
+                                        Padding="12,8"
+                                        FontSize="13"
+                                        Margin="0,0,0,8" />
+                            <!-- Quick Topic Suggestion Chips -->
+                            <WrapPanel>
+                                <ui:Button Appearance="Secondary" Padding="8,3" Margin="0,0,6,6" FontSize="11" Content="Newton's Laws" Command="{Binding SetQuickTopicCommand}" CommandParameter="Newton's Laws of Motion" />
+                                <ui:Button Appearance="Secondary" Padding="8,3" Margin="0,0,6,6" FontSize="11" Content="Indian Constitution" Command="{Binding SetQuickTopicCommand}" CommandParameter="Indian Constitution Fundamental Rights" />
+                                <ui:Button Appearance="Secondary" Padding="8,3" Margin="0,0,6,6" FontSize="11" Content="Cell Biology" Command="{Binding SetQuickTopicCommand}" CommandParameter="Cell Biology and Organelles" />
+                                <ui:Button Appearance="Secondary" Padding="8,3" Margin="0,0,6,6" FontSize="11" Content="Calculus" Command="{Binding SetQuickTopicCommand}" CommandParameter="Differential Calculus and Applications" />
+                                <ui:Button Appearance="Secondary" Padding="8,3" Margin="0,0,6,6" FontSize="11" Content="World History" Command="{Binding SetQuickTopicCommand}" CommandParameter="World War II Major Events" />
+                            </WrapPanel>
+                        </StackPanel>
+
+                        <!-- 2. Currently Open PDF Card (Topic is NOT asked!) -->
+                        <Border Visibility="{Binding IsSourceOpenPdf, Converter={StaticResource BoolToVis}}"
+                                Background="#1538BDF8" BorderBrush="#3538BDF8" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,0,16">
+                            <DockPanel>
+                                <ui:SymbolIcon DockPanel.Dock="Left" Symbol="DocumentPdf24" FontSize="22" Foreground="#FF38BDF8" Margin="0,0,12,0" VerticalAlignment="Center" />
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding OpenPdfFileName, StringFormat='📘 Using Open Document: {0}'}" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource TextFillColorPrimaryBrush}" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="Questions and topic reasoning will be generated directly from this PDF. No topic input required." FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" />
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+
+                        <!-- 3. Pick PDF from PC (Topic is NOT asked!) -->
+                        <Border Visibility="{Binding IsSourceLocalFile, Converter={StaticResource BoolToVis}}"
+                                Background="{DynamicResource SubtleFillColorSecondaryBrush}" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,0,16">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,8">
+                                    <ui:Button Appearance="Primary" Padding="12,6" Command="{Binding PickLocalPdfCommand}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <ui:SymbolIcon Symbol="FolderOpen24" FontSize="14" Margin="0,0,6,0" />
+                                            <TextBlock Text="Browse &amp; Pick PDF..." FontSize="12" FontWeight="SemiBold" />
+                                        </StackPanel>
+                                    </ui:Button>
+                                    <TextBlock Text="Select any textbook, lecture slides or notes PDF from your PC" FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" Margin="12,0,0,0" />
+                                </DockPanel>
+                                <Border Padding="10,8" CornerRadius="6" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                        Visibility="{Binding PickedPdfFileName, Converter={StaticResource NullToVis}}">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <ui:SymbolIcon Symbol="DocumentCheckmark24" FontSize="16" Foreground="#FF10B981" Margin="0,0,8,0" />
+                                        <TextBlock Text="{Binding PickedPdfFileName, StringFormat='Selected: {0}'}" FontWeight="SemiBold" FontSize="12.5" Foreground="#FF10B981" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </Border>
+                                <TextBlock Text="Questions and reasoning will be extracted directly from this file. No topic input required." FontSize="11" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,4,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 4. Downloaded NCERT Books (Topic is NOT asked!) -->
+                        <Border Visibility="{Binding IsSourceDownloadedNcert, Converter={StaticResource BoolToVis}}"
+                                Background="{DynamicResource SubtleFillColorSecondaryBrush}" BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="10" Padding="14,12" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="Choose from your downloaded official NCERT textbooks:" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,8" />
+                                <ComboBox ItemsSource="{Binding DownloadedNcertBooks}"
+                                          SelectedItem="{Binding SelectedNcertBook, Mode=TwoWay}"
+                                          HorizontalAlignment="Stretch"
+                                          Padding="10,6"
+                                          Margin="0,0,0,6"
+                                          Visibility="{Binding HasDownloadedNcertBooks, Converter={StaticResource BoolToVis}}">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal">
+                                                <Border Background="{Binding BadgeColorHex}" CornerRadius="4" Padding="6,1" Margin="0,0,8,0">
+                                                    <TextBlock Text="{Binding ClassDisplay}" FontSize="10.5" FontWeight="Bold" Foreground="White" />
+                                                </Border>
+                                                <TextBlock Text="{Binding Subject}" FontWeight="SemiBold" Margin="0,0,6,0" />
+                                                <TextBlock Text="—" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,0,6,0" />
+                                                <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                                <TextBlock Text="No NCERT textbooks downloaded yet. You can download official textbooks in 1 click from the NCERT Library tab or choose a PDF from your PC."
+                                           FontSize="11.5" Foreground="#F59E0B" TextWrapping="Wrap"
+                                           Visibility="{Binding HasDownloadedNcertBooks, Converter={StaticResource InverseBoolToVis}}" />
+                                <TextBlock Text="Questions will be formulated directly from the selected NCERT book. No topic input required." FontSize="11" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,4,0,0" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Row: Target Exam & Difficulty -->
+                        <Grid Margin="0,0,0,16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Target Exam -->
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="Target Exam / Context" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+                                <ComboBox SelectedValue="{Binding NewTargetExam, Mode=TwoWay}"
+                                          SelectedValuePath="Content"
+                                          Padding="10,6"
+                                          HorizontalAlignment="Stretch">
+                                    <ComboBoxItem Content="General Study" IsSelected="True" />
+                                    <ComboBoxItem Content="CBSE Board" />
+                                    <ComboBoxItem Content="NEET Medical" />
+                                    <ComboBoxItem Content="JEE Engineering" />
+                                    <ComboBoxItem Content="UPSC Civil Services" />
+                                    <ComboBoxItem Content="College / University" />
+                                </ComboBox>
+                            </StackPanel>
+
+                            <!-- Difficulty -->
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="Difficulty Level" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+                                <ComboBox SelectedValue="{Binding NewDifficulty, Mode=TwoWay}"
+                                          SelectedValuePath="Content"
+                                          Padding="10,6"
+                                          HorizontalAlignment="Stretch">
+                                    <ComboBoxItem Content="Beginner" />
+                                    <ComboBoxItem Content="Intermediate" IsSelected="True" />
+                                    <ComboBoxItem Content="Advanced / Competitive" />
+                                </ComboBox>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- Row: Question Count & Duration in Hours -->
+                        <Grid Margin="0,0,0,16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="12" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Question Count -->
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="{Binding NewQuestionCount, StringFormat='Number of Questions: {0}'}" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+                                <Slider Minimum="5" Maximum="30" SmallChange="5" LargeChange="5" TickFrequency="5" IsSnapToTickEnabled="True"
+                                        Value="{Binding NewQuestionCount, Mode=TwoWay}" />
+                                <DockPanel Margin="0,3,0,0">
+                                    <TextBlock Text="5 Qs" FontSize="10" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                                    <TextBlock Text="30 Qs" FontSize="10" Foreground="{DynamicResource TextFillColorTertiaryBrush}" HorizontalAlignment="Right" />
+                                </DockPanel>
+                            </StackPanel>
+
+                            <!-- Duration in Hours -->
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="{Binding NewDurationHours, StringFormat='Duration: {0} hr(s)'}" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+                                <WrapPanel>
+                                    <ui:Button Appearance="Secondary" Padding="6,3" Margin="0,0,4,4" FontSize="10.5" Content="0.25h (15m)" Command="{Binding SetQuickDurationCommand}" CommandParameter="0.25" />
+                                    <ui:Button Appearance="Secondary" Padding="6,3" Margin="0,0,4,4" FontSize="10.5" Content="0.5h (30m)" Command="{Binding SetQuickDurationCommand}" CommandParameter="0.5" />
+                                    <ui:Button Appearance="Secondary" Padding="6,3" Margin="0,0,4,4" FontSize="10.5" Content="1.0h (60m)" Command="{Binding SetQuickDurationCommand}" CommandParameter="1.0" />
+                                    <ui:Button Appearance="Secondary" Padding="6,3" Margin="0,0,4,4" FontSize="10.5" Content="1.5h" Command="{Binding SetQuickDurationCommand}" CommandParameter="1.5" />
+                                    <ui:Button Appearance="Secondary" Padding="6,3" Margin="0,0,4,4" FontSize="10.5" Content="2.0h" Command="{Binding SetQuickDurationCommand}" CommandParameter="2.0" />
+                                </WrapPanel>
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- Validation / Error Status Banner -->
+                        <Border Margin="0,0,0,16" Padding="12,8" CornerRadius="8" Background="#20EF4444"
+                                Visibility="{Binding HasStatusBanner, Converter={StaticResource BoolToVis}}">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon Symbol="Warning24" FontSize="14" Foreground="#FFEF4444" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding StatusBanner}" Foreground="#FFEF4444" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Dialog Buttons -->
+                        <DockPanel>
+                            <ui:Button Appearance="Secondary"
+                                       Padding="14,7"
+                                       Command="{Binding CloseCreateDialogCommand}"
+                                       Content="Cancel" />
+
+                            <ui:Button DockPanel.Dock="Right"
+                                       Appearance="Primary"
+                                       Padding="18,7"
+                                       Cursor="Hand"
+                                       Command="{Binding GenerateAndStartTestCommand}">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Sparkle24" FontSize="15" Margin="0,0,6,0" />
+                                    <TextBlock Text="Generate &amp; Start Test" FontWeight="Bold" FontSize="12.5" />
+                                </StackPanel>
+                            </ui:Button>
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- SUBMIT CONFIRMATION DIALOG -->
+            <Grid Background="#90000000"
+                  Visibility="{Binding IsConfirmSubmitDialogOpen, Converter={StaticResource BoolToVis}}">
+                <Border Width="440"
+                        Padding="24,20"
+                        CornerRadius="14"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Background="{DynamicResource ApplicationBackgroundBrush}"
+                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                        BorderThickness="1">
+                    <StackPanel>
+                        <Border Width="48" Height="48" CornerRadius="24" Background="#1510B981" HorizontalAlignment="Center" Margin="0,0,0,12">
+                            <ui:SymbolIcon Symbol="CheckmarkCircle24" FontSize="26" Foreground="#FF10B981" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <TextBlock Text="Submit Test for AI Evaluation?" FontSize="16" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,0,0,6" />
+                        <TextBlock Text="Once submitted, you will receive your score, AI feedback analysis, and detailed question-by-question solutions."
+                                   FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" TextAlignment="Center" Margin="0,0,0,16" />
+
+                        <Border Padding="12,8" CornerRadius="8" Background="{DynamicResource SubtleFillColorSecondaryBrush}" Margin="0,0,0,18">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,3">
+                                    <TextBlock Text="Answered: " FontSize="12" FontWeight="Medium" />
+                                    <TextBlock Text="{Binding ActiveSession.AnsweredCount}" FontSize="12" FontWeight="Bold" Foreground="#FF10B981" />
+                                    <TextBlock Text=" of " FontSize="12" FontWeight="Medium" />
+                                    <TextBlock Text="{Binding ActiveSession.TotalQuestions}" FontSize="12" FontWeight="Bold" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                    <TextBlock Text="Time Remaining: " FontSize="11.5" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    <TextBlock Text="{Binding TimeRemainingDisplay}" FontSize="11.5" FontWeight="SemiBold" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <DockPanel>
+                            <ui:Button Appearance="Secondary" Padding="14,6" Command="{Binding CancelSubmitTestCommand}" Content="Continue Test" />
+                            <ui:Button DockPanel.Dock="Right" Appearance="Primary" Padding="16,6" Command="{Binding ConfirmSubmitTestCommand}" Content="Yes, Submit Now" />
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- GENERATING TEST SPINNER OVERLAY -->
+            <Grid Background="#A0000000"
+                  Visibility="{Binding IsGeneratingTest, Converter={StaticResource BoolToVis}}">
+                <Border Padding="32,24" CornerRadius="14"
+                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Background="{DynamicResource ApplicationBackgroundBrush}"
+                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" BorderThickness="1"
+                        MaxWidth="440">
+                    <StackPanel HorizontalAlignment="Center">
+                        <ui:ProgressRing IsIndeterminate="True" Width="48" Height="48" HorizontalAlignment="Center" Margin="0,0,0,16" />
+                        <TextBlock Text="Preparing Your Interactive Test" FontSize="15" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,0,0,6" />
+                        <TextBlock Text="{Binding GenerationStatusText}"
+                                   FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" TextAlignment="Center" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- EVALUATING TEST SPINNER OVERLAY -->
+            <Grid Background="#A0000000"
+                  Visibility="{Binding IsEvaluating, Converter={StaticResource BoolToVis}}">
+                <Border Padding="32,24" CornerRadius="14"
+                        HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Background="{DynamicResource ApplicationBackgroundBrush}"
+                        BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}" BorderThickness="1"
+                        MaxWidth="440">
+                    <StackPanel HorizontalAlignment="Center">
+                        <ui:ProgressRing IsIndeterminate="True" Width="48" Height="48" HorizontalAlignment="Center" Margin="0,0,0,16" />
+                        <TextBlock Text="Analyzing Your Performance" FontSize="15" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,0,0,6" />
+                        <TextBlock Text="{Binding EvaluationStatusText}"
+                                   FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" TextAlignment="Center" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+            </Grid>
+        </Grid>
+
 
             <!-- Loading Overlay -->
             <Grid Background="#70000000"
